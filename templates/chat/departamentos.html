@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="simple-page simple-page--wa wa-page">
+    <section class="simple-card simple-card--wa wa-page-card">
+        <header class="simple-head wa-page-head">
+            <div>
+                <span class="eyebrow">Explorador interno</span>
+                <h1>Departamentos</h1>
+            </div>
+        </header>
+
+        <div class="simple-list simple-list--wa wa-page-list">
+            {% for departamento in departamentos %}
+            <article class="simple-item simple-item--wa wa-page-item">
+                <div class="department-avatar">{{ departamento.nombre|slice:":1" }}</div>
+                <div>
+                    <h2><a href="{% url 'chat:sala' departamento.id %}">{{ departamento.nombre }}</a></h2>
+                    <p>{{ departamento.descripcion|default:"Sin descripcion disponible." }}</p>
+                </div>
+            </article>
+            {% empty %}
+            <p class="wa-page-empty">No hay departamentos registrados.</p>
+            {% endfor %}
+        </div>
+    </section>
+</main>
+{% endblock %}

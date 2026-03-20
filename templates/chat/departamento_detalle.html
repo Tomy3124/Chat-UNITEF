@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="simple-page simple-page--wa wa-page">
+    <section class="simple-card simple-card--wa wa-page-card">
+        <header class="simple-head wa-page-head">
+            <div>
+                <span class="eyebrow">Departamento seleccionado</span>
+                <h1>{{ departamento.nombre }}</h1>
+            </div>
+            <a href="{% url 'chat:home' %}" class="wa-link-btn wa-link-btn--muted">Volver</a>
+        </header>
+
+        <article class="simple-item simple-item--wa wa-page-item">
+            <div class="department-avatar department-avatar--large">{{ departamento.nombre|slice:":1" }}</div>
+            <div>
+                <p>{{ departamento.descripcion|default:"Sin descripcion disponible." }}</p>
+                <a href="{% url 'chat:sala' departamento.id %}" class="wa-link-btn">Abrir sala</a>
+            </div>
+        </article>
+    </section>
+</main>
+{% endblock %}

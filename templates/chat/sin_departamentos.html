@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Sin departamentos | Chat UNITEF{% endblock %}
+{% block content %}
+<main class="simple-page simple-page--wa wa-page">
+    <section class="simple-card simple-card--wa wa-page-card wa-empty-shell">
+        <header class="simple-head wa-page-head">
+            <div class="wa-empty-brand">
+                <img src="{% static 'img/unitef.png' %}" alt="Logo UNITEF">
+                <div>
+                    <span class="eyebrow">Chat UNITEF</span>
+                    <h1>Sin contactos todavia</h1>
+                </div>
+            </div>
+            {% if request.user.is_authenticated and request.user.es_directiva %}
+            <button type="button" class="wa-link-btn" data-drawer-target="emptyDrawer" aria-label="Agregar departamento">Nuevo contacto</button>
+            {% endif %}
+        </header>
+
+        <div class="wa-empty-center">
+            <div class="empty-chat-preview">
+                <div class="empty-chat-bubble"></div>
+                <div class="empty-chat-bubble empty-chat-bubble--right"></div>
+                <div class="empty-chat-bubble"></div>
+            </div>
+            <p>
+                Cuando se creen departamentos, apareceran aqui como contactos y podras abrir su conversacion
+                con el mismo orden tipo WhatsApp.
+            </p>
+        </div>
+    </section>
+
+    {% if request.user.is_authenticated and request.user.es_directiva %}
+    <aside id="emptyDrawer" class="action-drawer action-drawer--global">
+        <div class="action-drawer__backdrop" data-drawer-close></div>
+        <div class="action-drawer__panel wa-drawer-panel">
+            <div class="drawer-head">
+                <div>
+                    <span class="eyebrow">Primer paso</span>
+                    <h2>Agregar departamento</h2>
+                </div>
+                <button type="button" class="drawer-close" data-drawer-close>+</button>
+            </div>
+            <form method="post" action="{% url 'chat:crear_departamento' %}" class="stack-form compact-form">
+                {% csrf_token %}
+                {{ departamento_form.as_p }}
+                <button type="submit" class="btn btn-primary w-100">Crear primer contacto</button>
+            </form>
+        </div>
+    </aside>
+    {% else %}
+    <a href="{% url 'login' %}" class="wa-link-btn">Volver al login</a>
+    {% endif %}
+</main>
+{% endblock %}

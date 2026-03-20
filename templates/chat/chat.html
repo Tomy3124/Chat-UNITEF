@@ -1,0 +1,282 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ departamento_actual.nombre }} | Chat UNITEF{% endblock %}
+{% block content %}
+<div class="wa-shell" data-chat-shell>
+    <aside class="wa-sidebar">
+        <header class="wa-sidebar__top">
+            <div class="wa-user">
+                <img src="{% static 'img/unitef.png' %}" alt="Logo UNITEF">
+                <div>
+                    <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
+                    <small>{{ request.user.rol_label }}</small>
+                </div>
+            </div>
+            <div class="wa-top-actions">
+                {% if request.user.es_directiva %}
+                <button type="button" class="wa-contact-manage" data-contact-manage title="Eliminar departamentos">Eliminar</button>
+                <button type="button" class="wa-contact-cancel" data-contact-manage-cancel title="Cancelar seleccion" hidden>✕</button>
+                <button type="button" class="wa-quick-add" data-drawer-target="adminDrawer" title="Nuevo contacto, aviso o asignacion">+</button>
+                {% endif %}
+                <a class="wa-top-action" href="{% url 'logout' %}" title="Salir">Salir</a>
+            </div>
+        </header>
+
+        <div class="wa-search-wrap">
+            <div class="wa-search-row">
+                <input id="chatSearch" type="search" placeholder="Buscar un chat o iniciar uno nuevo">
+                <button type="button" class="wa-theme-toggle" data-theme-toggle title="Cambiar tema">◐</button>
+            </div>
+        </div>
+
+        <nav class="wa-filters" aria-label="Filtros de conversaciones">
+            <button type="button" class="is-active" data-chat-filter="all">Todos</button>
+            <button type="button" data-chat-filter="unread">No leidos</button>
+        </nav>
+
+        <section class="wa-chat-list" id="chatList">
+            {% for conversacion in conversaciones %}
+            {% with departamento=conversacion.departamento ultimo=conversacion.ultimo_mensaje %}
+            <a
+                class="wa-chat-item {% if departamento.id == departamento_actual.id %}is-active{% endif %}"
+                href="{% url 'chat:sala' departamento.id %}"
+                data-departamento-id="{{ departamento.id }}"
+                data-chat-name="{{ departamento.nombre|lower }}"
+                data-last-message="{{ conversacion.ultimo_cuerpo|lower }}"
+                data-unread="{{ conversacion.no_leidos }}"
+                data-favorite="{% if departamento.id == departamento_actual.id or forloop.counter <= 2 %}1{% else %}0{% endif %}">
+                {% if request.user.es_directiva %}<span class="wa-contact-checkbox"></span>{% endif %}
+                <div class="wa-chat-avatar">{{ departamento.nombre|slice:":1" }}</div>
+                <div class="wa-chat-meta">
+                    <div class="wa-chat-head">
+                        <strong>{{ conversacion.titulo_contacto }}</strong>
+                        <time>{% if ultimo %}{{ ultimo.fecha|date:"h:i A" }}{% endif %}</time>
+                    </div>
+                    <p>
+                        {% if ultimo %}
+                            {% if conversacion.ultimo_autor %}<span class="wa-last-author">{{ conversacion.ultimo_autor }}:</span> {% endif %}{{ conversacion.ultimo_cuerpo|truncatechars:38 }}
+                        {% elif conversacion.ultimo_cuerpo %}
+                            {{ conversacion.ultimo_cuerpo|truncatechars:52 }}
+                        {% endif %}
+                    </p>
+                </div>
+                {% if conversacion.no_leidos > 0 %}
+                <span class="wa-unread-pill">{{ conversacion.no_leidos }}</span>
+                {% endif %}
+            </a>
+            {% endwith %}
+            {% empty %}
+            <div class="wa-empty-list">No hay conversaciones disponibles.</div>
+            {% endfor %}
+        </section>
+    </aside>
+
+    <main class="wa-chat">
+        <header class="wa-chat__header">
+            <div class="wa-contact">
+                <div class="wa-chat-avatar wa-chat-avatar--lg">{{ departamento_actual.nombre|slice:":1" }}</div>
+                <div>
+                    <strong>{{ header_title }}</strong>
+                    <small>{{ header_subtitle }}</small>
+                </div>
+            </div>
+            <div class="wa-header-actions">
+                <button type="button" class="wa-header-menu-toggle" id="headerChatMenuToggle" title="Opciones del chat">⋮</button>
+                <button type="button" data-side-panel="assignments" class="wa-panel-toggle {% if request.user.es_departamento and asignaciones %}has-indicator{% endif %}">Asignaciones<span class="wa-panel-indicator" aria-hidden="true"></span></button>
+                <button type="button" data-side-panel="notices" class="wa-panel-toggle {% if request.user.es_departamento and avisos %}has-indicator{% endif %}">Avisos<span class="wa-panel-indicator" aria-hidden="true"></span></button>
+            </div>
+            <div class="wa-header-menu" id="headerChatMenu">
+                <button type="button" data-chat-action="select">Seleccionar</button>
+                <button type="button" data-chat-action="clear">Vaciar chat</button>
+            </div>
+        </header>
+
+        <section id="messages" class="wa-messages" data-username="{{ request.user.username }}" data-user-id="{{ request.user.id }}">
+            {% for mensaje in mensajes %}
+            <article
+            class="wa-bubble {% if mensaje.usuario_id == request.user.id %}mine{% else %}theirs{% endif %}"
+                data-message-id="{{ mensaje.id }}"
+                data-is-mine="{% if mensaje.usuario_id == request.user.id %}1{% else %}0{% endif %}"
+                data-edit-url="{% url 'chat:editar_mensaje' mensaje.id %}"
+                data-delete-url="{% url 'chat:eliminar_mensaje' mensaje.id %}"
+                data-forward-url="{% url 'chat:reenviar_mensaje' mensaje.id %}">
+                <header>
+                    <strong>{% if mensaje.usuario and mensaje.usuario.es_directiva %}{{ mensaje.usuario.first_name|default:mensaje.usuario.username }}{% elif mensaje.usuario and mensaje.usuario.departamento %}{{ mensaje.usuario.departamento.nombre }}{% else %}{{ mensaje.usuario.username|default:'Sistema' }}{% endif %}</strong>
+                    <time>{{ mensaje.fecha|date:"h:i A" }}</time>
+                </header>
+                {% if mensaje.contenido %}
+                <p>{{ mensaje.contenido }}</p>
+                {% endif %}
+                {% if mensaje.archivo %}
+                <div class="wa-file-card">
+                    <div class="wa-file-name">📄 {{ mensaje.archivo.name|cut:"chat/archivos/" }}</div>
+                    <div class="wa-file-actions">
+                        <a class="wa-file-link" href="{% url 'chat:abrir_archivo_mensaje' mensaje.id %}" target="_blank" rel="noopener">Abrir</a>
+                        <a class="wa-file-link" href="{% url 'chat:descargar_archivo_mensaje' mensaje.id %}">Guardar como</a>
+                    </div>
+                </div>
+                {% endif %}
+            </article>
+            {% empty %}
+            <article class="wa-bubble theirs wa-empty-placeholder">
+                <header>
+                    <strong>Sistema</strong>
+                    <time>Ahora</time>
+                </header>
+                <p>Este chat aun no tiene mensajes.</p>
+            </article>
+            {% endfor %}
+        </section>
+
+        <div class="wa-selection-toolbar" id="waSelectionToolbar" hidden>
+            <button type="button" data-selection-action="all">Seleccionar todo</button>
+            <span id="waSelectionCount">0 seleccionados</span>
+            <button type="button" data-selection-action="forward" title="Reenviar">↗</button>
+            <button type="button" data-selection-action="delete" title="Eliminar">🗑</button>
+            <button type="button" data-selection-action="cancel" title="Cerrar">✕</button>
+        </div>
+
+        <footer class="wa-composer">
+            <form id="messageForm" class="wa-send" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="wa-attach-menu-wrap">
+                    <button type="button" class="wa-attach" id="attachToggle" title="Adjuntar" aria-label="Adjuntar archivo">+</button>
+                    <div class="wa-attach-menu" id="attachMenu">
+                        <button type="button" id="attachFileBtn">Archivo</button>
+                    </div>
+                </div>
+                <input id="waFileInput" type="file" name="archivo" class="d-none">
+                <input type="text" id="messageInput" placeholder="Escribe un mensaje" autocomplete="off">
+                <span id="attachInfo" class="wa-attach-info" aria-live="polite"></span>
+                <button type="submit" class="wa-send-submit" aria-label="Enviar mensaje">Enviar</button>
+            </form>
+        </footer>
+
+        <aside class="wa-side-panel" id="waInfoPanel" aria-live="polite">
+            <header>
+                <strong id="waInfoTitle">Asignaciones</strong>
+                <button type="button" data-close-side-panel>✕</button>
+            </header>
+            <div class="wa-side-content" id="assignmentsList" data-panel-content="assignments">
+                {% for asignacion in asignaciones %}
+                <article class="wa-note wa-note--assignment">
+                    <span>Asignacion</span>
+                    <h3>{{ asignacion.titulo }}</h3>
+                    <p>{{ asignacion.contenido }}</p>
+                    <small>{{ asignacion.fecha|date:"d/m/Y h:i A" }}</small>
+                    {% if request.user.es_directiva %}
+                    <div class="wa-note-actions">
+                        <button
+                            type="button"
+                            class="wa-note-action"
+                            data-edit-aviso
+                            data-url="{% url 'chat:editar_aviso' asignacion.id %}"
+                            data-tipo="{{ asignacion.tipo }}"
+                            data-titulo="{{ asignacion.titulo }}"
+                            data-contenido="{{ asignacion.contenido }}">Editar</button>
+                        <button
+                            type="button"
+                            class="wa-note-action danger"
+                            data-delete-aviso
+                            data-url="{% url 'chat:eliminar_aviso' asignacion.id %}">Eliminar</button>
+                    </div>
+                    {% endif %}
+                </article>
+                {% empty %}
+                <div class="wa-empty-update" data-empty="assignments">No hay asignaciones enviadas todavia.</div>
+                {% endfor %}
+            </div>
+            <div class="wa-side-content d-none" id="noticesList" data-panel-content="notices">
+                {% for aviso in avisos %}
+                <article class="wa-note">
+                    <span>Aviso</span>
+                    <h3>{{ aviso.titulo }}</h3>
+                    <p>{{ aviso.contenido }}</p>
+                    <small>{{ aviso.fecha|date:"d/m/Y h:i A" }}</small>
+                    {% if request.user.es_directiva %}
+                    <div class="wa-note-actions">
+                        <button
+                            type="button"
+                            class="wa-note-action"
+                            data-edit-aviso
+                            data-url="{% url 'chat:editar_aviso' aviso.id %}"
+                            data-tipo="{{ aviso.tipo }}"
+                            data-titulo="{{ aviso.titulo }}"
+                            data-contenido="{{ aviso.contenido }}">Editar</button>
+                        <button
+                            type="button"
+                            class="wa-note-action danger"
+                            data-delete-aviso
+                            data-url="{% url 'chat:eliminar_aviso' aviso.id %}">Eliminar</button>
+                    </div>
+                    {% endif %}
+                </article>
+                {% empty %}
+                <div class="wa-empty-update" data-empty="notices">No hay avisos en este momento.</div>
+                {% endfor %}
+            </div>
+        </aside>
+    </main>
+
+    {% if request.user.es_directiva %}
+    <aside id="adminDrawer" class="action-drawer">
+        <div class="action-drawer__backdrop" data-drawer-close></div>
+        <div class="action-drawer__panel wa-drawer-panel">
+            <div class="drawer-head">
+                <div>
+                    <span class="eyebrow">Acciones de directiva</span>
+                    <h2>Gestion rapida</h2>
+                </div>
+                <button type="button" class="drawer-close" data-drawer-close>+</button>
+            </div>
+
+            <section class="drawer-block">
+                <h3>Agregar departamento</h3>
+                <form method="post" action="{% url 'chat:crear_departamento' %}" class="stack-form compact-form">
+                    {% csrf_token %}
+                    {{ departamento_form.as_p }}
+                    <button type="submit" class="btn btn-primary w-100">Crear departamento</button>
+                </form>
+            </section>
+
+            <section class="drawer-block">
+                <h3>Enviar aviso o asignacion</h3>
+                <form method="post" action="{% url 'chat:publicar_aviso' departamento_actual.id %}" class="stack-form compact-form">
+                    {% csrf_token %}
+                    {{ aviso_form.as_p }}
+                    <button type="submit" class="btn btn-primary w-100">Publicar</button>
+                </form>
+            </section>
+        </div>
+    </aside>
+    {% endif %}
+</div>
+
+<div id="messageActionMenu" class="wa-message-menu" hidden>
+    <button type="button" data-menu-action="edit">Editar</button>
+    <button type="button" data-menu-action="delete">Eliminar</button>
+    <button type="button" data-menu-action="forward">Reenviar</button>
+</div>
+
+<div id="waModal" class="wa-modal" hidden>
+    <div class="wa-modal__backdrop" data-wa-modal-close></div>
+    <div class="wa-modal__panel">
+        <h3 id="waModalTitle"></h3>
+        <div id="waModalBody"></div>
+        <div class="wa-modal__actions" id="waModalActions"></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+    window.chatConfig = {
+        socketPath: "/ws/chat/departamento/{{ departamento_actual.id }}/",
+        sendUrl: "{% url 'chat:enviar_mensaje' departamento_actual.id %}",
+        clearChatUrl: "{% url 'chat:limpiar_chat' departamento_actual.id %}",
+        deleteDepartmentsUrl: "{% url 'chat:eliminar_departamentos' %}",
+        forwardTemplateUrl: "{% url 'chat:reenviar_mensaje' 0 %}",
+        directivaId: "{{ directiva_activa_id }}",
+        csrfToken: "{{ csrf_token }}",
+    };
+</script>
+{% endblock %}

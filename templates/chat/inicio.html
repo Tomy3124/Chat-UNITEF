@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Inicio | Chat UNITEF{% endblock %}
+{% block content %}
+<div class="wa-shell" data-chat-shell>
+    <aside class="wa-sidebar">
+        <header class="wa-sidebar__top">
+            <div class="wa-user">
+                <img src="{% static 'img/unitef.png' %}" alt="Logo UNITEF">
+                <div>
+                    <strong>{{ request.user.get_full_name|default:request.user.username }}</strong>
+                    <small>{{ request.user.rol_label }}</small>
+                </div>
+            </div>
+            <div class="wa-top-actions">
+                {% if request.user.es_directiva %}
+                <button type="button" class="wa-contact-manage" data-contact-manage title="Eliminar departamentos">Eliminar</button>
+                <button type="button" class="wa-contact-cancel" data-contact-manage-cancel title="Cancelar seleccion" hidden>✕</button>
+                <button type="button" class="wa-quick-add" data-drawer-target="adminDrawer" title="Nuevo contacto, aviso o asignacion">+</button>
+                {% endif %}
+                <a class="wa-top-action" href="{% url 'logout' %}" title="Salir">Salir</a>
+            </div>
+        </header>
+
+        <div class="wa-search-wrap">
+            <div class="wa-search-row">
+                <input id="chatSearch" type="search" placeholder="Buscar un chat o iniciar uno nuevo">
+                <button type="button" class="wa-theme-toggle" data-theme-toggle title="Cambiar tema">◐</button>
+            </div>
+        </div>
+
+        <nav class="wa-filters" aria-label="Filtros de conversaciones">
+            <button type="button" class="is-active" data-chat-filter="all">Todos</button>
+            <button type="button" data-chat-filter="unread">No leidos</button>
+        </nav>
+
+        <section class="wa-chat-list" id="chatList">
+            {% for conversacion in conversaciones %}
+            {% with departamento=conversacion.departamento ultimo=conversacion.ultimo_mensaje %}
+            <a
+                class="wa-chat-item"
+                href="{% url 'chat:sala' departamento.id %}"
+                data-departamento-id="{{ departamento.id }}"
+                data-chat-name="{{ departamento.nombre|lower }}"
+                data-last-message="{{ conversacion.ultimo_cuerpo|lower }}"
+                data-unread="{{ conversacion.no_leidos }}"
+                data-favorite="{% if forloop.counter <= 2 %}1{% else %}0{% endif %}">
+                {% if request.user.es_directiva %}<span class="wa-contact-checkbox"></span>{% endif %}
+                <div class="wa-chat-avatar">{{ departamento.nombre|slice:":1" }}</div>
+                <div class="wa-chat-meta">
+                    <div class="wa-chat-head">
+                        <strong>{{ conversacion.titulo_contacto }}</strong>
+                        <time>{% if ultimo %}{{ ultimo.fecha|date:"h:i A" }}{% endif %}</time>
+                    </div>
+                    <p>
+                        {% if ultimo %}
+                            {% if conversacion.ultimo_autor %}<span class="wa-last-author">{{ conversacion.ultimo_autor }}:</span> {% endif %}{{ conversacion.ultimo_cuerpo|truncatechars:38 }}
+                        {% elif conversacion.ultimo_cuerpo %}
+                            {{ conversacion.ultimo_cuerpo|truncatechars:52 }}
+                        {% endif %}
+                    </p>
+                </div>
+                {% if conversacion.no_leidos > 0 %}
+                <span class="wa-unread-pill">{{ conversacion.no_leidos }}</span>
+                {% endif %}
+            </a>
+            {% endwith %}
+            {% empty %}
+            <div class="wa-empty-list">No hay conversaciones disponibles.</div>
+            {% endfor %}
+        </section>
+    </aside>
+
+    <main class="wa-chat wa-chat--empty">
+        <section class="wa-empty-chat-panel" aria-live="polite">
+            <h1>Haz clic en un departamento</h1>
+            <p>Selecciona un contacto en la barra lateral para abrir su conversacion.</p>
+        </section>
+    </main>
+</div>
+
+{% if request.user.es_directiva %}
+<aside id="adminDrawer" class="action-drawer">
+    <div class="action-drawer__backdrop" data-drawer-close></div>
+    <div class="action-drawer__panel wa-drawer-panel">
+        <div class="drawer-head">
+            <div>
+                <span class="eyebrow">Acciones de directiva</span>
+                <h2>Gestion rapida</h2>
+            </div>
+            <button type="button" class="drawer-close" data-drawer-close>+</button>
+        </div>
+
+        <section class="drawer-block">
+            <h3>Agregar departamento</h3>
+            <form method="post" action="{% url 'chat:crear_departamento' %}" class="stack-form compact-form">
+                {% csrf_token %}
+                {{ departamento_form.as_p }}
+                <button type="submit" class="btn btn-primary w-100">Crear departamento</button>
+            </form>
+        </section>
+
+        <section class="drawer-block">
+            <h3>Enviar aviso o asignacion</h3>
+            <form method="post" action="{% url 'chat:publicar_aviso_global' %}" class="stack-form compact-form">
+                {% csrf_token %}
+                <p>
+                    <label for="id_departamento_id">Departamento</label>
+                    <select name="departamento_id" id="id_departamento_id" class="form-control">
+                        {% for departamento in departamentos %}
+                        <option value="{{ departamento.id }}">{{ departamento.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </p>
+                {{ aviso_form.as_p }}
+                <button type="submit" class="btn btn-primary w-100">Publicar</button>
+            </form>
+        </section>
+    </div>
+</aside>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+    window.chatConfig = {
+        directivaId: "{% if request.user.es_directiva %}{{ request.user.id }}{% endif %}",
+        deleteDepartmentsUrl: "{% url 'chat:eliminar_departamentos' %}",
+    };
+</script>
+{% endblock %}
