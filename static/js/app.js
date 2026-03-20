@@ -1,4 +1,14 @@
 document.addEventListener("DOMContentLoaded", () => {
+    const applyViewportHeight = () => {
+        const viewportHeight = window.visualViewport?.height || window.innerHeight;
+        document.documentElement.style.setProperty("--wa-app-height", `${viewportHeight}px`);
+    };
+
+    applyViewportHeight();
+    window.addEventListener("resize", applyViewportHeight);
+    window.visualViewport?.addEventListener("resize", applyViewportHeight);
+    window.visualViewport?.addEventListener("scroll", applyViewportHeight);
+
     const roleInput = document.getElementById("id_rol");
     const roleGroups = document.querySelectorAll("[data-role-group]");
     const loginForm = document.getElementById("loginAutoForm");
@@ -930,7 +940,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const currentUserId = Number(messagesPanel.dataset.userId || 0);
     const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(`${wsProtocol}://${window.location.host}${window.chatConfig.socketPath}`);
+    let roomSocket = null;
+    let roomSocketReconnectTimer = null;
     const renderedIds = new Set(
         Array.from(messagesPanel.querySelectorAll("[data-message-id]"))
             .map((node) => Number(node.dataset.messageId))
@@ -1086,7 +1097,7 @@ document.addEventListener("DOMContentLoaded", () => {
         scrollToBottom();
     };
 
-    socket.onmessage = (event) => {
+    const handleSocketMessage = (event) => {
         const payload = JSON.parse(event.data);
         const viewerDirectivaId = Number(window.chatConfig?.directivaId || 0);
         if (viewerDirectivaId && payload.directiva_id && Number(payload.directiva_id) !== viewerDirectivaId) {
@@ -1095,7 +1106,39 @@ document.addEventListener("DOMContentLoaded", () => {
         renderMessage(payload);
     };
 
-    socket.onopen = scrollToBottom;
+    const connectRoomSocket = () => {
+        if (!window.chatConfig?.socketPath) {
+            return;
+        }
+
+        if (roomSocket && (roomSocket.readyState === WebSocket.OPEN || roomSocket.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+
+        roomSocket = new WebSocket(`${wsProtocol}://${window.location.host}${window.chatConfig.socketPath}`);
+        roomSocket.onmessage = handleSocketMessage;
+        roomSocket.onopen = () => {
+            if (roomSocketReconnectTimer) {
+                window.clearTimeout(roomSocketReconnectTimer);
+                roomSocketReconnectTimer = null;
+            }
+            scrollToBottom();
+        };
+        roomSocket.onclose = () => {
+            if (roomSocketReconnectTimer) {
+                return;
+            }
+            roomSocketReconnectTimer = window.setTimeout(() => {
+                roomSocketReconnectTimer = null;
+                connectRoomSocket();
+            }, 1500);
+        };
+        roomSocket.onerror = () => {
+            roomSocket?.close();
+        };
+    };
+
+    connectRoomSocket();
 
     messagesPanel.addEventListener("click", (event) => {
         const target = event.target;
@@ -1214,6 +1257,13 @@ document.addEventListener("DOMContentLoaded", () => {
             closeMessageMenu();
             closeWaModal();
         }
+    });
+
+    window.addEventListener("beforeunload", () => {
+        if (roomSocketReconnectTimer) {
+            window.clearTimeout(roomSocketReconnectTimer);
+        }
+        roomSocket?.close();
     });
 
     document.addEventListener("click", (event) => {
