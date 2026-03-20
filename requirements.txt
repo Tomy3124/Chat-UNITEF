@@ -5,3 +5,5 @@ redis==7.3.0
 daphne==4.2.1
 dj-database-url==2.3.0
 whitenoise==6.9.0
+gunicorn==23.0.0
+uvicorn==0.34.0

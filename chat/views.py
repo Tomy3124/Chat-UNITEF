@@ -201,18 +201,8 @@ def _obtener_conversaciones(usuario, departamentos):
     return conversaciones
 
 
-def _marcar_chat_como_leido(usuario, departamento):
+def _obtener_estado_paneles(usuario, departamento):
     filtro_directiva = _filtro_conversacion(usuario, departamento)
-    ultimo_id_ajeno = (
-        Mensaje.objects.filter(departamento=departamento, es_sistema=False)
-        .filter(filtro_directiva)
-        .exclude(eliminaciones__usuario=usuario)
-        .exclude(usuario=usuario)
-        .order_by("-id")
-        .values_list("id", flat=True)
-        .first()
-    ) or 0
-
     ultimo_aviso_id = (
         Aviso.objects.filter(departamento=departamento, tipo=Aviso.TIPO_AVISO)
         .filter(filtro_directiva)
@@ -228,25 +218,55 @@ def _marcar_chat_como_leido(usuario, departamento):
         .first()
     ) or 0
 
+    lectura = DepartamentoLectura.objects.filter(usuario=usuario, departamento=departamento).first()
+    ultimo_aviso_leido = lectura.ultimo_aviso_id if lectura else 0
+    ultimo_asignacion_leida = lectura.ultimo_asignacion_id if lectura else 0
+
+    return {
+        "ultimo_aviso_id": ultimo_aviso_id,
+        "ultimo_asignacion_id": ultimo_asignacion_id,
+        "no_leidos_avisos": Aviso.objects.filter(
+            departamento=departamento,
+            tipo=Aviso.TIPO_AVISO,
+            id__gt=ultimo_aviso_leido,
+        )
+        .filter(filtro_directiva)
+        .count(),
+        "no_leidos_asignaciones": Aviso.objects.filter(
+            departamento=departamento,
+            tipo=Aviso.TIPO_ASIGNACION,
+            id__gt=ultimo_asignacion_leida,
+        )
+        .filter(filtro_directiva)
+        .count(),
+    }
+
+
+def _marcar_mensajes_como_leidos(usuario, departamento):
+    filtro_directiva = _filtro_conversacion(usuario, departamento)
+    ultimo_id_ajeno = (
+        Mensaje.objects.filter(departamento=departamento, es_sistema=False)
+        .filter(filtro_directiva)
+        .exclude(eliminaciones__usuario=usuario)
+        .exclude(usuario=usuario)
+        .order_by("-id")
+        .values_list("id", flat=True)
+        .first()
+    ) or 0
+
     lectura, _ = DepartamentoLectura.objects.get_or_create(
         usuario=usuario,
         departamento=departamento,
         defaults={
             "ultimo_mensaje_id": ultimo_id_ajeno,
-            "ultimo_aviso_id": ultimo_aviso_id,
-            "ultimo_asignacion_id": ultimo_asignacion_id,
+            "ultimo_aviso_id": 0,
+            "ultimo_asignacion_id": 0,
         },
     )
     campos_a_actualizar = []
     if ultimo_id_ajeno > lectura.ultimo_mensaje_id:
         lectura.ultimo_mensaje_id = ultimo_id_ajeno
         campos_a_actualizar.append("ultimo_mensaje_id")
-    if ultimo_aviso_id > lectura.ultimo_aviso_id:
-        lectura.ultimo_aviso_id = ultimo_aviso_id
-        campos_a_actualizar.append("ultimo_aviso_id")
-    if ultimo_asignacion_id > lectura.ultimo_asignacion_id:
-        lectura.ultimo_asignacion_id = ultimo_asignacion_id
-        campos_a_actualizar.append("ultimo_asignacion_id")
     if campos_a_actualizar:
         lectura.save(update_fields=[*campos_a_actualizar, "actualizado_en"])
 
@@ -273,7 +293,7 @@ def sala_chat(request, departamento_id):
     departamento_actual = _obtener_departamento_visible(request.user, departamento_id)
     departamentos = _departamentos_visibles(request.user)
     filtro_directiva = _filtro_conversacion(request.user, departamento_actual)
-    _marcar_chat_como_leido(request.user, departamento_actual)
+    _marcar_mensajes_como_leidos(request.user, departamento_actual)
     mensajes = (
         Mensaje.objects.filter(departamento=departamento_actual, es_sistema=False)
         .filter(filtro_directiva)
@@ -291,6 +311,11 @@ def sala_chat(request, departamento_id):
     ).filter(filtro_directiva).order_by("-fecha")[:6]
     usuarios = Usuario.objects.select_related("departamento").order_by("-is_online", "rol", "first_name", "username")
     conversaciones = _obtener_conversaciones(request.user, departamentos)
+    conversacion_actual = next(
+        (item for item in conversaciones if item["departamento"].id == departamento_actual.id),
+        None,
+    )
+    estado_paneles = _obtener_estado_paneles(request.user, departamento_actual)
     directiva_activa = _resolver_directiva_destino(request.user, departamento_actual)
 
     header_title = departamento_actual.nombre
@@ -315,8 +340,51 @@ def sala_chat(request, departamento_id):
         "archivo_form": ArchivoMensajeForm(),
         "departamento_form": DepartamentoForm(),
         "aviso_form": AvisoDirectivaForm(),
+        "panel_no_leidos_avisos": (conversacion_actual or {}).get("no_leidos_avisos", estado_paneles["no_leidos_avisos"]),
+        "panel_no_leidos_asignaciones": (conversacion_actual or {}).get("no_leidos_asignaciones", estado_paneles["no_leidos_asignaciones"]),
     }
     return render(request, "chat/chat.html", contexto)
+
+
+@login_required
+@require_POST
+def marcar_panel_como_leido(request, departamento_id):
+    departamento = _obtener_departamento_visible(request.user, departamento_id)
+    panel = request.POST.get("panel")
+    if panel not in {"notices", "assignments"}:
+        return JsonResponse({"ok": False, "error": "Panel no valido."}, status=400)
+
+    estado_paneles = _obtener_estado_paneles(request.user, departamento)
+    lectura, _ = DepartamentoLectura.objects.get_or_create(
+        usuario=request.user,
+        departamento=departamento,
+        defaults={
+            "ultimo_mensaje_id": 0,
+            "ultimo_aviso_id": 0,
+            "ultimo_asignacion_id": 0,
+        },
+    )
+
+    campos_a_actualizar = []
+    if panel == "notices" and estado_paneles["ultimo_aviso_id"] > lectura.ultimo_aviso_id:
+        lectura.ultimo_aviso_id = estado_paneles["ultimo_aviso_id"]
+        campos_a_actualizar.append("ultimo_aviso_id")
+    if panel == "assignments" and estado_paneles["ultimo_asignacion_id"] > lectura.ultimo_asignacion_id:
+        lectura.ultimo_asignacion_id = estado_paneles["ultimo_asignacion_id"]
+        campos_a_actualizar.append("ultimo_asignacion_id")
+
+    if campos_a_actualizar:
+        lectura.save(update_fields=[*campos_a_actualizar, "actualizado_en"])
+
+    estado_actualizado = _obtener_estado_paneles(request.user, departamento)
+    return JsonResponse(
+        {
+            "ok": True,
+            "panel": panel,
+            "no_leidos_avisos": estado_actualizado["no_leidos_avisos"],
+            "no_leidos_asignaciones": estado_actualizado["no_leidos_asignaciones"],
+        }
+    )
 
 
 @login_required

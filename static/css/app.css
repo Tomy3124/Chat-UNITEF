@@ -2249,6 +2249,20 @@
     align-items: center;
 }
 
+.wa-mobile-back {
+    display: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: #d6e4eb;
+    background: transparent;
+    font-size: 1.2rem;
+    flex: 0 0 auto;
+}
+
 .wa-header-actions {
     display: flex;
     gap: 0.5rem;
@@ -3183,33 +3197,103 @@ body:not(.theme-light) .login-pulse-bar span {
         grid-template-columns: 1fr;
     }
 
-    .wa-sidebar {
-        max-height: 48dvh;
-        height: 48dvh;
+    .wa-shell--home {
+        height: 100dvh;
     }
 
-    .wa-chat {
-        height: 52dvh;
+    .wa-shell--home .wa-sidebar {
+        max-height: 100dvh;
+        height: 100dvh;
+        border-right: 0;
+    }
+
+    .wa-shell--home .wa-chat {
+        display: none;
+    }
+
+    .wa-shell--conversation .wa-sidebar {
+        display: none;
+    }
+
+    .wa-shell--conversation .wa-chat {
+        height: 100dvh;
     }
 
     .wa-selection-toolbar {
         margin: 0 0.75rem 0.35rem;
     }
+
+    .wa-side-panel {
+        top: 0;
+        width: 100%;
+        border-left: 0;
+    }
 }
 
 @media (max-width: 680px) {
+    .wa-shell,
+    .wa-shell--home,
+    .wa-shell--conversation,
+    .wa-chat,
+    .wa-sidebar {
+        height: 100dvh;
+    }
+
     .wa-chat__header {
-        flex-direction: column;
-        align-items: flex-start;
+        padding: max(0.7rem, env(safe-area-inset-top)) 0.8rem 0.7rem;
+        align-items: center;
+        gap: 0.75rem;
     }
 
     .wa-header-actions {
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         width: 100%;
+        overflow-x: auto;
+        padding-bottom: 0.2rem;
     }
 
     .wa-header-actions button {
         flex: 0 0 auto;
+    }
+
+    .wa-mobile-back {
+        display: inline-flex;
+    }
+
+    .wa-contact {
+        width: 100%;
+        gap: 0.65rem;
+    }
+
+    .wa-contact > div:last-child {
+        min-width: 0;
+    }
+
+    .wa-contact strong,
+    .wa-contact small {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .wa-sidebar__top {
+        padding-top: max(0.7rem, env(safe-area-inset-top));
+    }
+
+    .wa-search-wrap,
+    .wa-filters {
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+    }
+
+    .wa-chat-item {
+        padding: 0.82rem 0.8rem;
+    }
+
+    .wa-chat-avatar,
+    .wa-chat-avatar--lg {
+        width: 44px;
+        height: 44px;
     }
 
     .wa-header-menu {
@@ -3227,7 +3311,8 @@ body:not(.theme-light) .login-pulse-bar span {
     }
 
     .wa-bubble {
-        max-width: 100%;
+        max-width: 86%;
+        font-size: 0.95rem;
     }
 
     .wa-send button {
@@ -3244,6 +3329,45 @@ body:not(.theme-light) .login-pulse-bar span {
     .wa-selection-toolbar span {
         width: 100%;
         order: -1;
+    }
+
+    .wa-messages {
+        padding: 0.8rem 0.7rem;
+        gap: 0.5rem;
+    }
+
+    .wa-composer {
+        padding: 0.52rem 0.62rem calc(0.52rem + env(safe-area-inset-bottom));
+    }
+
+    .wa-send {
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        gap: 0.35rem;
+    }
+
+    .wa-send input {
+        min-height: 44px;
+        border-radius: 999px;
+        padding-left: 0.9rem;
+        padding-right: 0.9rem;
+    }
+
+    .wa-attach-info {
+        grid-column: 1 / -1;
+        padding-left: 0.25rem;
+    }
+
+    .wa-side-panel header {
+        padding: max(0.9rem, env(safe-area-inset-top)) 0.9rem 0.8rem;
+    }
+
+    .wa-side-content {
+        padding: 0.75rem;
+    }
+
+    .wa-empty-chat-panel {
+        max-width: 100%;
+        margin: 0 0.8rem;
     }
 
     .auth-card {

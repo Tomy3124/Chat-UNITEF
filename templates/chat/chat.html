@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}{{ departamento_actual.nombre }} | Chat UNITEF{% endblock %}
 {% block content %}
-<div class="wa-shell" data-chat-shell>
+<div class="wa-shell wa-shell--conversation" data-chat-shell>
     <aside class="wa-sidebar">
         <header class="wa-sidebar__top">
             <div class="wa-user">
@@ -74,6 +74,7 @@
     <main class="wa-chat">
         <header class="wa-chat__header">
             <div class="wa-contact">
+                <a class="wa-mobile-back" href="{% url 'chat:home' %}" aria-label="Volver a conversaciones">←</a>
                 <div class="wa-chat-avatar wa-chat-avatar--lg">{{ departamento_actual.nombre|slice:":1" }}</div>
                 <div>
                     <strong>{{ header_title }}</strong>
@@ -82,8 +83,8 @@
             </div>
             <div class="wa-header-actions">
                 <button type="button" class="wa-header-menu-toggle" id="headerChatMenuToggle" title="Opciones del chat">⋮</button>
-                <button type="button" data-side-panel="assignments" class="wa-panel-toggle {% if request.user.es_departamento and asignaciones %}has-indicator{% endif %}">Asignaciones<span class="wa-panel-indicator" aria-hidden="true"></span></button>
-                <button type="button" data-side-panel="notices" class="wa-panel-toggle {% if request.user.es_departamento and avisos %}has-indicator{% endif %}">Avisos<span class="wa-panel-indicator" aria-hidden="true"></span></button>
+                <button type="button" data-side-panel="assignments" data-unread-count="{{ panel_no_leidos_asignaciones }}" class="wa-panel-toggle {% if request.user.es_departamento and panel_no_leidos_asignaciones > 0 %}has-indicator{% endif %}">Asignaciones<span class="wa-panel-indicator" aria-hidden="true"></span></button>
+                <button type="button" data-side-panel="notices" data-unread-count="{{ panel_no_leidos_avisos }}" class="wa-panel-toggle {% if request.user.es_departamento and panel_no_leidos_avisos > 0 %}has-indicator{% endif %}">Avisos<span class="wa-panel-indicator" aria-hidden="true"></span></button>
             </div>
             <div class="wa-header-menu" id="headerChatMenu">
                 <button type="button" data-chat-action="select">Seleccionar</button>
@@ -159,7 +160,7 @@
             </header>
             <div class="wa-side-content" id="assignmentsList" data-panel-content="assignments">
                 {% for asignacion in asignaciones %}
-                <article class="wa-note wa-note--assignment">
+                <article class="wa-note wa-note--assignment" data-notice-id="{{ asignacion.id }}" data-panel-kind="assignments">
                     <span>Asignacion</span>
                     <h3>{{ asignacion.titulo }}</h3>
                     <p>{{ asignacion.contenido }}</p>
@@ -188,7 +189,7 @@
             </div>
             <div class="wa-side-content d-none" id="noticesList" data-panel-content="notices">
                 {% for aviso in avisos %}
-                <article class="wa-note">
+                <article class="wa-note" data-notice-id="{{ aviso.id }}" data-panel-kind="notices">
                     <span>Aviso</span>
                     <h3>{{ aviso.titulo }}</h3>
                     <p>{{ aviso.contenido }}</p>
@@ -273,9 +274,11 @@
         socketPath: "/ws/chat/departamento/{{ departamento_actual.id }}/",
         sendUrl: "{% url 'chat:enviar_mensaje' departamento_actual.id %}",
         clearChatUrl: "{% url 'chat:limpiar_chat' departamento_actual.id %}",
+        markPanelReadUrl: "{% url 'chat:marcar_panel_como_leido' departamento_actual.id %}",
         deleteDepartmentsUrl: "{% url 'chat:eliminar_departamentos' %}",
         forwardTemplateUrl: "{% url 'chat:reenviar_mensaje' 0 %}",
         directivaId: "{{ directiva_activa_id }}",
+        isDepartmentUser: {% if request.user.es_departamento %}true{% else %}false{% endif %},
         csrfToken: "{{ csrf_token }}",
     };
 </script>

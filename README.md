@@ -84,7 +84,7 @@ Comandos:
 pip install -r requirements.txt
 python manage.py collectstatic --noinput
 python manage.py migrate
-daphne -b 0.0.0.0 -p $PORT intranet.asgi:application
+gunicorn intranet.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
 ```
 
 ## Flujo recomendado

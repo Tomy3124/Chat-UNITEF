@@ -34,6 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const sidePanelTitle = document.getElementById("waInfoTitle");
     const sidePanelOpeners = document.querySelectorAll("[data-side-panel]");
     const sidePanelCloser = document.querySelector("[data-close-side-panel]");
+    const activeChatItem = document.querySelector(".wa-chat-item.is-active");
 
     const editAvisoButtons = document.querySelectorAll("[data-edit-aviso]");
     const deleteAvisoButtons = document.querySelectorAll("[data-delete-aviso]");
@@ -47,6 +48,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let contactSelectionMode = false;
     let messageSelectionMode = false;
     const selectedMessages = new Set();
+    const panelReadRequests = new Set();
 
     const getCsrfToken = () => {
         if (window.chatConfig?.csrfToken) {
@@ -254,6 +256,50 @@ document.addEventListener("DOMContentLoaded", () => {
         button.classList.toggle("has-indicator", visible);
     };
 
+    const getPanelButton = (panelName) => document.querySelector(`.wa-panel-toggle[data-side-panel="${panelName}"]`);
+
+    const getPanelUnreadCount = (panelName) => Number(getPanelButton(panelName)?.dataset.unreadCount || 0);
+
+    const updatePanelUnreadState = (panelName, nextCount, syncConversation = true) => {
+        const button = getPanelButton(panelName);
+        if (!button) {
+            return;
+        }
+
+        const previousCount = Number(button.dataset.unreadCount || 0);
+        const safeNextCount = Math.max(0, nextCount);
+        button.dataset.unreadCount = String(safeNextCount);
+        setPanelIndicator(panelName, safeNextCount > 0);
+
+        if (syncConversation && activeChatItem && previousCount !== safeNextCount) {
+            updateUnreadBubble(activeChatItem, { increment: safeNextCount - previousCount });
+            runChatFilters();
+        }
+    };
+
+    const markPanelAsRead = async (panelName) => {
+        if (!window.chatConfig?.markPanelReadUrl || !window.chatConfig?.isDepartmentUser) {
+            return;
+        }
+
+        if (getPanelUnreadCount(panelName) <= 0 || panelReadRequests.has(panelName)) {
+            return;
+        }
+
+        panelReadRequests.add(panelName);
+        const formData = new FormData();
+        formData.append("panel", panelName);
+
+        const { ok, payload } = await postForm(window.chatConfig.markPanelReadUrl, formData);
+        panelReadRequests.delete(panelName);
+        if (!ok || !payload?.ok) {
+            return;
+        }
+
+        updatePanelUnreadState("notices", Number(payload.no_leidos_avisos || 0));
+        updatePanelUnreadState("assignments", Number(payload.no_leidos_asignaciones || 0));
+    };
+
     const buildDepartmentOptions = () => {
         return Array.from(chatItems)
             .map((item) => {
@@ -376,6 +422,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
         sidePanel.dataset.activePanel = panelName;
         sidePanel.classList.add("is-open");
+
+        if (window.chatConfig?.isDepartmentUser) {
+            markPanelAsRead(panelName);
+        }
     };
 
     sidePanelOpeners.forEach((button) => {
@@ -892,12 +942,9 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     const renderNoticeUpdate = (message) => {
+        const panelName = message.tipo === "asignacion" ? "assignments" : "notices";
         if (message.action === "deleted") {
-            document.querySelectorAll("[data-edit-aviso]").forEach((button) => {
-                if (button.dataset.url?.includes(`/${message.id}/`)) {
-                    button.closest(".wa-note")?.remove();
-                }
-            });
+            document.querySelector(`[data-notice-id="${message.id}"]`)?.remove();
             return;
         }
 
@@ -906,8 +953,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!target) {
             return;
         }
-
-        setPanelIndicator(isAssignment ? "assignments" : "notices", true);
 
         target.querySelector("[data-empty]")?.remove();
 
@@ -921,6 +966,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (!note) {
                         return;
                     }
+                    note.dataset.noticeId = String(message.id);
+                    note.dataset.panelKind = panelName;
                     const titleNode = note.querySelector("h3");
                     const contentNode = note.querySelector("p");
                     const dateNode = note.querySelector("small");
@@ -936,6 +983,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const article = document.createElement("article");
         article.className = `wa-note${isAssignment ? " wa-note--assignment" : ""}`;
+        article.dataset.noticeId = String(message.id);
+        article.dataset.panelKind = panelName;
         article.innerHTML = `
             <span>${isAssignment ? "Asignacion" : "Aviso"}</span>
             <h3>${escapeHtml(message.titulo || "Actualizacion")}</h3>
@@ -943,6 +992,17 @@ document.addEventListener("DOMContentLoaded", () => {
             <small>${escapeHtml(message.fecha)}</small>
         `;
         target.prepend(article);
+
+        if (!window.chatConfig?.isDepartmentUser || message.action === "updated") {
+            return;
+        }
+
+        if (sidePanel?.classList.contains("is-open") && sidePanel.dataset.activePanel === panelName) {
+            markPanelAsRead(panelName);
+            return;
+        }
+
+        updatePanelUnreadState(panelName, getPanelUnreadCount(panelName) + 1);
     };
 
     const updateActiveConversationPreview = (message) => {

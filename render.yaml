@@ -3,7 +3,7 @@ services:
     name: chat-unitef
     runtime: python
     buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
-    startCommand: daphne -b 0.0.0.0 -p $PORT intranet.asgi:application
+    startCommand: gunicorn intranet.asgi:application -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT
     envVars:
       - key: DJANGO_SECRET_KEY
         generateValue: true
