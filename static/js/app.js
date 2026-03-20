@@ -97,6 +97,119 @@ document.addEventListener("DOMContentLoaded", () => {
             .replaceAll('"', "&quot;")
             .replaceAll("'", "&#039;");
 
+    const browserNotificationsSupported = typeof window !== "undefined" && "Notification" in window;
+    const shownNotificationKeys = new Set();
+    const currentViewerId = Number(window.chatConfig?.currentUserId || messagesPanel?.dataset.userId || 0);
+
+    const requestNotificationPermission = async () => {
+        if (!browserNotificationsSupported || Notification.permission !== "default") {
+            return;
+        }
+        try {
+            await Notification.requestPermission();
+        } catch {
+            // Algunos navegadores pueden rechazar la solicitud sin interaccion suficiente.
+        }
+    };
+
+    const scheduleNotificationPermissionPrompt = () => {
+        if (!browserNotificationsSupported || Notification.permission !== "default") {
+            return;
+        }
+
+        const askOnce = () => {
+            void requestNotificationPermission();
+            window.removeEventListener("pointerdown", askOnce);
+            window.removeEventListener("keydown", askOnce);
+        };
+
+        window.addEventListener("pointerdown", askOnce, { once: true });
+        window.addEventListener("keydown", askOnce, { once: true });
+    };
+
+    const shouldDisplayBrowserNotification = () => {
+        if (!browserNotificationsSupported || Notification.permission !== "granted") {
+            return false;
+        }
+        return document.hidden || !document.hasFocus();
+    };
+
+    const rememberNotification = (key) => {
+        if (!key || shownNotificationKeys.has(key)) {
+            return false;
+        }
+        shownNotificationKeys.add(key);
+        window.setTimeout(() => shownNotificationKeys.delete(key), 15000);
+        return true;
+    };
+
+    const getNotificationTargetUrl = (payload, item) => {
+        if (item?.href) {
+            return item.href;
+        }
+        if (payload?.departamento_id) {
+            return `/chat/departamento/${payload.departamento_id}/`;
+        }
+        return window.location.href;
+    };
+
+    const notifyIncomingPayload = (payload, item = null) => {
+        if (!payload || !shouldDisplayBrowserNotification()) {
+            return;
+        }
+
+        if (payload.kind === "message" && Number(payload.usuario_id || 0) === currentViewerId) {
+            return;
+        }
+        if (payload.kind === "notice" && Number(payload.directiva_id || 0) === currentViewerId) {
+            return;
+        }
+
+        const key = `${payload.kind || "event"}:${payload.action || "new"}:${payload.id || payload.fecha || Math.random()}`;
+        if (!rememberNotification(key)) {
+            return;
+        }
+
+        let title = "Chat UNITEF";
+        let body = "";
+        const timestamp = Number(payload.timestamp || Date.now());
+
+        if (payload.kind === "notice") {
+            title = payload.emisor || payload.tipo_label || "UNITEF";
+            const summary = [payload.tipo_label, payload.titulo].filter(Boolean).join(": ");
+            body = payload.contenido || summary || "Nueva actualizacion";
+        } else {
+            title = payload.usuario || payload.autor_tipo_label || "Nuevo mensaje";
+            body = (payload.contenido || "").trim() || (payload.archivo_nombre ? `Archivo: ${payload.archivo_nombre}` : "Nuevo mensaje");
+        }
+
+        const notification = new Notification(title, {
+            body,
+            icon: window.chatConfig?.notificationIcon,
+            badge: window.chatConfig?.notificationIcon,
+            timestamp,
+            tag: key,
+            renotify: false,
+        });
+
+        notification.onclick = () => {
+            window.focus();
+            window.location.href = getNotificationTargetUrl(payload, item);
+            notification.close();
+        };
+    };
+
+    scheduleNotificationPermissionPrompt();
+
+    const autoresizeMessageInput = () => {
+        if (!messageInput) {
+            return;
+        }
+        messageInput.style.height = "auto";
+        const nextHeight = Math.min(messageInput.scrollHeight, 144);
+        messageInput.style.height = `${Math.max(nextHeight, 44)}px`;
+    };
+
     const buildFileAttachmentHtml = (message) => {
         if (!message.archivo_url) {
             return "";
@@ -270,22 +383,26 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const getPanelUnreadCount = (panelName) => Number(getPanelButton(panelName)?.dataset.unreadCount || 0);
 
-    const updatePanelUnreadState = (panelName, nextCount, syncConversation = true) => {
+    const updatePanelUnreadState = (panelName, nextCount) => {
         const button = getPanelButton(panelName);
         if (!button) {
             return;
         }
 
-        const previousCount = Number(button.dataset.unreadCount || 0);
         const safeNextCount = Math.max(0, nextCount);
         button.dataset.unreadCount = String(safeNextCount);
         setPanelIndicator(panelName, safeNextCount > 0);
-
-        if (syncConversation && activeChatItem && previousCount !== safeNextCount) {
-            updateUnreadBubble(activeChatItem, { increment: safeNextCount - previousCount });
-            runChatFilters();
-        }
     };
+
+    const getLatestRenderedMessageId = () => Math.max(0, ...Array.from(renderedIds));
+
+    const getLatestNoticeId = (panelName) =>
+        Math.max(
+            0,
+            ...Array.from(document.querySelectorAll(`.wa-note[data-panel-kind="${panelName}"]`))
+                .map((node) => Number(node.dataset.noticeId || 0))
+                .filter((value) => Number.isFinite(value)),
+        );
 
     const markPanelAsRead = async (panelName) => {
         if (!window.chatConfig?.markPanelReadUrl || !window.chatConfig?.isDepartmentUser) {
@@ -450,6 +567,10 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     runChatFilters();
+    if (activeChatItem) {
+        updateUnreadBubble(activeChatItem, { reset: true });
+        runChatFilters();
+    }
 
     if (contactManageButton) {
         contactManageButton.addEventListener("click", async () => {
@@ -531,9 +652,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     return;
                 }
                 updateConversationPreviewForItem(item, payload);
-                if (payload.action !== "deleted") {
+                if (payload.kind !== "notice" && payload.action !== "deleted") {
                     updateUnreadBubble(item, { increment: 1 });
                 }
+                notifyIncomingPayload(payload, item);
                 runChatFilters();
             };
         });
@@ -942,6 +1064,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
     let roomSocket = null;
     let roomSocketReconnectTimer = null;
+    let updatesPollTimer = null;
+    let updatesFetchInFlight = false;
     const renderedIds = new Set(
         Array.from(messagesPanel.querySelectorAll("[data-message-id]"))
             .map((node) => Number(node.dataset.messageId))
@@ -966,6 +1090,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         target.querySelector("[data-empty]")?.remove();
+
+        const existingNote = document.querySelector(`[data-notice-id="${message.id}"]`);
+        if (existingNote && message.action !== "updated") {
+            const titleNode = existingNote.querySelector("h3");
+            const contentNode = existingNote.querySelector("p");
+            const dateNode = existingNote.querySelector("small");
+            const typeNode = existingNote.querySelector("span");
+            if (titleNode) titleNode.textContent = message.titulo || "Actualizacion";
+            if (contentNode) contentNode.textContent = message.contenido || "";
+            if (dateNode) dateNode.textContent = message.fecha || "";
+            if (typeNode) typeNode.textContent = isAssignment ? "Asignacion" : "Aviso";
+            existingNote.dataset.panelKind = panelName;
+            return;
+        }
 
         if (message.action === "updated") {
             document.querySelectorAll("[data-edit-aviso]").forEach((button) => {
@@ -1103,6 +1241,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (viewerDirectivaId && payload.directiva_id && Number(payload.directiva_id) !== viewerDirectivaId) {
             return;
         }
+        notifyIncomingPayload(payload, activeChatItem);
         renderMessage(payload);
     };
 
@@ -1138,7 +1277,59 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     };
 
+    const pollConversationUpdates = async () => {
+        if (!window.chatConfig?.updatesUrl || updatesFetchInFlight) {
+            return;
+        }
+
+        updatesFetchInFlight = true;
+        const params = new URLSearchParams({
+            last_message_id: String(getLatestRenderedMessageId()),
+            last_notice_id: String(getLatestNoticeId("notices")),
+            last_assignment_id: String(getLatestNoticeId("assignments")),
+        });
+
+        try {
+            const response = await fetch(`${window.chatConfig.updatesUrl}?${params.toString()}`, {
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            });
+            if (!response.ok) {
+                return;
+            }
+            const payload = await response.json();
+            if (!payload?.ok) {
+                return;
+            }
+
+            (payload.messages || []).forEach((message) => {
+                notifyIncomingPayload(message, activeChatItem);
+                renderMessage(message);
+            });
+            (payload.notices || []).forEach((notice) => {
+                notifyIncomingPayload(notice, activeChatItem);
+                renderNoticeUpdate(notice);
+            });
+            (payload.assignments || []).forEach((assignment) => {
+                notifyIncomingPayload(assignment, activeChatItem);
+                renderNoticeUpdate(assignment);
+            });
+        } catch {
+            // Mantener el fallback silencioso.
+        } finally {
+            updatesFetchInFlight = false;
+        }
+    };
+
     connectRoomSocket();
+    pollConversationUpdates();
+    updatesPollTimer = window.setInterval(pollConversationUpdates, 1000);
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+            pollConversationUpdates();
+        }
+    });
 
     messagesPanel.addEventListener("click", (event) => {
         const target = event.target;
@@ -1198,6 +1389,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     if (messageForm) {
+        autoresizeMessageInput();
+
+        messageInput?.addEventListener("input", () => {
+            autoresizeMessageInput();
+        });
+
         messageForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             const contenido = messageInput.value.trim();
@@ -1233,6 +1430,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
 
             messageInput.value = "";
+            autoresizeMessageInput();
             if (fileInput) {
                 fileInput.value = "";
             }
@@ -1260,6 +1458,9 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     window.addEventListener("beforeunload", () => {
+        if (updatesPollTimer) {
+            window.clearInterval(updatesPollTimer);
+        }
         if (roomSocketReconnectTimer) {
             window.clearTimeout(roomSocketReconnectTimer);
         }

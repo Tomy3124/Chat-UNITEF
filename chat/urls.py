@@ -13,6 +13,7 @@ from chat.views import (
     home,
     limpiar_chat,
     marcar_panel_como_leido,
+    obtener_actualizaciones,
     publicar_aviso,
     publicar_aviso_global,
     reenviar_mensaje,
@@ -26,6 +27,7 @@ app_name = "chat"
 urlpatterns = [
     path("inicio/", home, name="home"),
     path("chat/departamento/<int:departamento_id>/", sala_chat, name="sala"),
+    path("chat/departamento/<int:departamento_id>/actualizaciones/", obtener_actualizaciones, name="obtener_actualizaciones"),
     path("chat/departamento/<int:departamento_id>/mensaje/", enviar_mensaje, name="enviar_mensaje"),
     path("chat/departamento/<int:departamento_id>/archivo/", subir_archivo, name="subir_archivo"),
     path("chat/departamento/<int:departamento_id>/panel-leido/", marcar_panel_como_leido, name="marcar_panel_como_leido"),

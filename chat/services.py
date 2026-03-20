@@ -16,6 +16,8 @@ def _autor_tipo_label(usuario):
 
 
 def serializar_mensaje(mensaje):
+    fecha_local = timezone.localtime(mensaje.fecha)
+
     if mensaje.usuario:
         if mensaje.usuario.es_directiva:
             usuario_visible = mensaje.usuario.first_name or mensaje.usuario.username
@@ -35,7 +37,8 @@ def serializar_mensaje(mensaje):
         "autor_tipo_label": _autor_tipo_label(mensaje.usuario),
         "directiva_id": mensaje.directiva_id,
         "contenido": mensaje.contenido,
-        "fecha": timezone.localtime(mensaje.fecha).strftime("%I:%M %p"),
+        "fecha": fecha_local.strftime("%I:%M %p"),
+        "timestamp": int(fecha_local.timestamp() * 1000),
         "archivo_url": mensaje.archivo.url if mensaje.archivo else "",
         "archivo_nombre": mensaje.archivo.name.split("/")[-1] if mensaje.archivo else "",
         "archivo_abrir_url": reverse("chat:abrir_archivo_mensaje", args=[mensaje.id]) if mensaje.archivo else "",
@@ -45,16 +48,26 @@ def serializar_mensaje(mensaje):
 
 
 def serializar_aviso(aviso):
+    fecha_local = timezone.localtime(aviso.fecha)
+
+    if aviso.directiva:
+        emisor_visible = aviso.directiva.first_name or aviso.directiva.username
+    else:
+        emisor_visible = aviso.departamento.nombre
+
     return {
         "kind": "notice",
         "id": aviso.id,
         "departamento_id": aviso.departamento_id,
         "directiva_id": aviso.directiva_id,
+        "emisor": emisor_visible,
         "tipo": aviso.tipo,
         "tipo_label": aviso.get_tipo_display(),
         "titulo": aviso.titulo,
         "contenido": aviso.contenido,
-        "fecha": timezone.localtime(aviso.fecha).strftime("%d/%m/%Y %I:%M %p"),
+        "fecha": fecha_local.strftime("%d/%m/%Y %I:%M %p"),
+        "hora": fecha_local.strftime("%I:%M %p"),
+        "timestamp": int(fecha_local.timestamp() * 1000),
     }
 
 

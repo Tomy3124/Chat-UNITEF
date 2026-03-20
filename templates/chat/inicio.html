@@ -124,6 +124,8 @@
 <script>
     window.chatConfig = {
         directivaId: "{% if request.user.es_directiva %}{{ request.user.id }}{% endif %}",
+        currentUserId: Number("{{ request.user.id }}"),
+        notificationIcon: "{% static 'img/unitef.png' %}",
         deleteDepartmentsUrl: "{% url 'chat:eliminar_departamentos' %}",
     };
 </script>

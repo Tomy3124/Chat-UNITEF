@@ -120,10 +120,7 @@
             </article>
             {% empty %}
             <article class="wa-bubble theirs wa-empty-placeholder">
-                <header>
-                    <strong>Sistema</strong>
-                    <time>Ahora</time>
-                </header>
+                
                 <p>Este chat aun no tiene mensajes.</p>
             </article>
             {% endfor %}
@@ -147,7 +144,7 @@
                     </div>
                 </div>
                 <input id="waFileInput" type="file" name="archivo" class="d-none">
-                <input type="text" id="messageInput" placeholder="Escribe un mensaje" autocomplete="off">
+                <textarea id="messageInput" placeholder="Escribe un mensaje" rows="1"></textarea>
                 <span id="attachInfo" class="wa-attach-info" aria-live="polite"></span>
                 <button type="submit" class="wa-send-submit" aria-label="Enviar mensaje">Enviar</button>
             </form>
@@ -272,13 +269,16 @@
 <script>
     window.chatConfig = {
         socketPath: "/ws/chat/departamento/{{ departamento_actual.id }}/",
+        updatesUrl: "{% url 'chat:obtener_actualizaciones' departamento_actual.id %}",
         sendUrl: "{% url 'chat:enviar_mensaje' departamento_actual.id %}",
         clearChatUrl: "{% url 'chat:limpiar_chat' departamento_actual.id %}",
         markPanelReadUrl: "{% url 'chat:marcar_panel_como_leido' departamento_actual.id %}",
         deleteDepartmentsUrl: "{% url 'chat:eliminar_departamentos' %}",
         forwardTemplateUrl: "{% url 'chat:reenviar_mensaje' 0 %}",
         directivaId: "{{ directiva_activa_id }}",
-        isDepartmentUser: {% if request.user.es_departamento %}true{% else %}false{% endif %},
+        currentUserId: Number("{{ request.user.id }}"),
+        isDepartmentUser: "{{ request.user.es_departamento|yesno:'true,false' }}" === "true",
+        notificationIcon: "{% static 'img/unitef.png' %}",
         csrfToken: "{{ csrf_token }}",
     };
 </script>

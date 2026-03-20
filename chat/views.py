@@ -16,6 +16,7 @@ from chat.services import (
     emitir_actualizacion_aviso,
     emitir_eliminacion_aviso,
     emitir_mensaje_departamento,
+    serializar_aviso,
     serializar_mensaje,
 )
 from departamentos.forms import DepartamentoForm
@@ -166,8 +167,6 @@ def _obtener_conversaciones(usuario, departamentos):
         ).filter(
             filtro_directiva
         ).count()
-        no_leidos_total = no_leidos_mensajes + no_leidos_avisos + no_leidos_asignaciones
-
         cuerpo_ultimo = ""
         autor_ultimo = ""
         titulo_contacto = departamento.nombre
@@ -192,7 +191,7 @@ def _obtener_conversaciones(usuario, departamentos):
                 "ultimo_cuerpo": cuerpo_ultimo,
                 "ultimo_autor": autor_ultimo,
                 "titulo_contacto": titulo_contacto,
-                "no_leidos": no_leidos_total,
+                "no_leidos": no_leidos_mensajes,
                 "no_leidos_mensajes": no_leidos_mensajes,
                 "no_leidos_avisos": no_leidos_avisos,
                 "no_leidos_asignaciones": no_leidos_asignaciones,
@@ -253,20 +252,40 @@ def _marcar_mensajes_como_leidos(usuario, departamento):
         .values_list("id", flat=True)
         .first()
     ) or 0
+    ultimo_aviso_id = (
+        Aviso.objects.filter(departamento=departamento, tipo=Aviso.TIPO_AVISO)
+        .filter(filtro_directiva)
+        .order_by("-id")
+        .values_list("id", flat=True)
+        .first()
+    ) or 0
+    ultimo_asignacion_id = (
+        Aviso.objects.filter(departamento=departamento, tipo=Aviso.TIPO_ASIGNACION)
+        .filter(filtro_directiva)
+        .order_by("-id")
+        .values_list("id", flat=True)
+        .first()
+    ) or 0
 
     lectura, _ = DepartamentoLectura.objects.get_or_create(
         usuario=usuario,
         departamento=departamento,
         defaults={
             "ultimo_mensaje_id": ultimo_id_ajeno,
-            "ultimo_aviso_id": 0,
-            "ultimo_asignacion_id": 0,
+            "ultimo_aviso_id": ultimo_aviso_id,
+            "ultimo_asignacion_id": ultimo_asignacion_id,
         },
     )
     campos_a_actualizar = []
     if ultimo_id_ajeno > lectura.ultimo_mensaje_id:
         lectura.ultimo_mensaje_id = ultimo_id_ajeno
         campos_a_actualizar.append("ultimo_mensaje_id")
+    if ultimo_aviso_id > lectura.ultimo_aviso_id:
+        lectura.ultimo_aviso_id = ultimo_aviso_id
+        campos_a_actualizar.append("ultimo_aviso_id")
+    if ultimo_asignacion_id > lectura.ultimo_asignacion_id:
+        lectura.ultimo_asignacion_id = ultimo_asignacion_id
+        campos_a_actualizar.append("ultimo_asignacion_id")
     if campos_a_actualizar:
         lectura.save(update_fields=[*campos_a_actualizar, "actualizado_en"])
 
@@ -383,6 +402,58 @@ def marcar_panel_como_leido(request, departamento_id):
             "panel": panel,
             "no_leidos_avisos": estado_actualizado["no_leidos_avisos"],
             "no_leidos_asignaciones": estado_actualizado["no_leidos_asignaciones"],
+        }
+    )
+
+
+@login_required
+def obtener_actualizaciones(request, departamento_id):
+    departamento = _obtener_departamento_visible(request.user, departamento_id)
+    filtro_directiva = _filtro_conversacion(request.user, departamento)
+
+    try:
+        last_message_id = int(request.GET.get("last_message_id", 0))
+    except (TypeError, ValueError):
+        last_message_id = 0
+
+    try:
+        last_notice_id = int(request.GET.get("last_notice_id", 0))
+    except (TypeError, ValueError):
+        last_notice_id = 0
+
+    try:
+        last_assignment_id = int(request.GET.get("last_assignment_id", 0))
+    except (TypeError, ValueError):
+        last_assignment_id = 0
+
+    mensajes = (
+        Mensaje.objects.filter(departamento=departamento, es_sistema=False, id__gt=last_message_id)
+        .filter(filtro_directiva)
+        .exclude(eliminaciones__usuario=request.user)
+        .select_related("usuario", "departamento")
+        .order_by("id")
+    )
+    avisos = (
+        Aviso.objects.filter(departamento=departamento, tipo=Aviso.TIPO_AVISO, id__gt=last_notice_id)
+        .filter(filtro_directiva)
+        .order_by("id")
+    )
+    asignaciones = (
+        Aviso.objects.filter(
+            departamento=departamento,
+            tipo=Aviso.TIPO_ASIGNACION,
+            id__gt=last_assignment_id,
+        )
+        .filter(filtro_directiva)
+        .order_by("id")
+    )
+
+    return JsonResponse(
+        {
+            "ok": True,
+            "messages": [serializar_mensaje(mensaje) for mensaje in mensajes],
+            "notices": [serializar_aviso(aviso) for aviso in avisos],
+            "assignments": [serializar_aviso(asignacion) for asignacion in asignaciones],
         }
     )
 
