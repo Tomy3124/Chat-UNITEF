@@ -1,7 +1,9 @@
 document.addEventListener("DOMContentLoaded", () => {
     const applyViewportHeight = () => {
         const viewportHeight = window.visualViewport?.height || window.innerHeight;
+        const viewportOffsetTop = window.visualViewport?.offsetTop || 0;
         document.documentElement.style.setProperty("--wa-app-height", `${viewportHeight}px`);
+        document.documentElement.style.setProperty("--wa-viewport-offset-top", `${viewportOffsetTop}px`);
     };
 
     applyViewportHeight();
@@ -98,8 +100,28 @@ document.addEventListener("DOMContentLoaded", () => {
             .replaceAll("'", "&#039;");
 
     const browserNotificationsSupported = typeof window !== "undefined" && "Notification" in window;
+    const serviceWorkerSupported = typeof navigator !== "undefined" && "serviceWorker" in navigator;
     const shownNotificationKeys = new Set();
     const currentViewerId = Number(window.chatConfig?.currentUserId || messagesPanel?.dataset.userId || 0);
+    let notificationRegistration = null;
+
+    const setKeyboardOpenState = (open) => {
+        document.body.classList.toggle("wa-keyboard-open", open);
+    };
+
+    const registerNotificationServiceWorker = async () => {
+        if (!serviceWorkerSupported || !window.isSecureContext) {
+            return null;
+        }
+
+        try {
+            notificationRegistration = await navigator.serviceWorker.register("/service-worker.js");
+            return notificationRegistration;
+        } catch {
+            notificationRegistration = null;
+            return null;
+        }
+    };
 
     const requestNotificationPermission = async () => {
         if (!browserNotificationsSupported || Notification.permission !== "default") {
@@ -125,6 +147,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         window.addEventListener("pointerdown", askOnce, { once: true });
         window.addEventListener("keydown", askOnce, { once: true });
+    };
+
+    const suppressInstallPrompt = () => {
+        window.addEventListener("beforeinstallprompt", (event) => {
+            event.preventDefault();
+        });
     };
 
     const shouldDisplayBrowserNotification = () => {
@@ -173,6 +201,7 @@ document.addEventListener("DOMContentLoaded", () => {
         let title = "Chat UNITEF";
         let body = "";
         const timestamp = Number(payload.timestamp || Date.now());
+        const targetUrl = getNotificationTargetUrl(payload, item);
 
         if (payload.kind === "notice") {
             title = payload.emisor || payload.tipo_label || "UNITEF";
@@ -183,22 +212,31 @@ document.addEventListener("DOMContentLoaded", () => {
             body = (payload.contenido || "").trim() || (payload.archivo_nombre ? `Archivo: ${payload.archivo_nombre}` : "Nuevo mensaje");
         }
 
-        const notification = new Notification(title, {
+        const options = {
             body,
             icon: window.chatConfig?.notificationIcon,
             badge: window.chatConfig?.notificationIcon,
             timestamp,
             tag: key,
             renotify: false,
-        });
+            data: { url: targetUrl },
+        };
 
+        if (notificationRegistration?.showNotification) {
+            void notificationRegistration.showNotification(title, options);
+            return;
+        }
+
+        const notification = new Notification(title, options);
         notification.onclick = () => {
             window.focus();
-            window.location.href = getNotificationTargetUrl(payload, item);
+            window.location.href = targetUrl;
             notification.close();
         };
     };
 
+    void registerNotificationServiceWorker();
+    suppressInstallPrompt();
     scheduleNotificationPermissionPrompt();
 
     const autoresizeMessageInput = () => {
@@ -513,6 +551,24 @@ document.addEventListener("DOMContentLoaded", () => {
         item.dataset.lastMessage = body.toLowerCase();
     };
 
+    const moveConversationItemToTop = (item, payload) => {
+        if (!item || !payload || payload.action === "deleted") {
+            return;
+        }
+
+        const list = item.parentElement;
+        if (!list) {
+            return;
+        }
+
+        item.dataset.lastTimestamp = String(Number(payload.timestamp || Date.now()));
+        item.classList.remove("is-activity-bump");
+        void item.offsetWidth;
+        item.classList.add("is-activity-bump");
+        list.prepend(item);
+        window.setTimeout(() => item.classList.remove("is-activity-bump"), 320);
+    };
+
     if (chatSearch) {
         chatSearch.addEventListener("input", runChatFilters);
     }
@@ -652,6 +708,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     return;
                 }
                 updateConversationPreviewForItem(item, payload);
+                moveConversationItemToTop(item, payload);
                 if (payload.kind !== "notice" && payload.action !== "deleted") {
                     updateUnreadBubble(item, { increment: 1 });
                 }
@@ -1078,6 +1135,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const renderNoticeUpdate = (message) => {
         const panelName = message.tipo === "asignacion" ? "assignments" : "notices";
+        const activeItem = document.querySelector(".wa-chat-item.is-active");
         if (message.action === "deleted") {
             document.querySelector(`[data-notice-id="${message.id}"]`)?.remove();
             return;
@@ -1102,6 +1160,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (dateNode) dateNode.textContent = message.fecha || "";
             if (typeNode) typeNode.textContent = isAssignment ? "Asignacion" : "Aviso";
             existingNote.dataset.panelKind = panelName;
+            if (activeItem) {
+                updateActiveConversationPreview(message);
+                moveConversationItemToTop(activeItem, message);
+                runChatFilters();
+            }
             return;
         }
 
@@ -1141,6 +1204,12 @@ document.addEventListener("DOMContentLoaded", () => {
             <small>${escapeHtml(message.fecha)}</small>
         `;
         target.prepend(article);
+
+        if (activeItem) {
+            updateActiveConversationPreview(message);
+            moveConversationItemToTop(activeItem, message);
+            runChatFilters();
+        }
 
         if (!window.chatConfig?.isDepartmentUser || message.action === "updated") {
             return;
@@ -1231,6 +1300,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const activeItem = document.querySelector(".wa-chat-item.is-active");
         if (activeItem) {
             updateUnreadBubble(activeItem, { reset: true });
+            moveConversationItemToTop(activeItem, message);
         }
         scrollToBottom();
     };
@@ -1390,6 +1460,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (messageForm) {
         autoresizeMessageInput();
+
+        messageInput?.addEventListener("focus", () => {
+            setKeyboardOpenState(true);
+            applyViewportHeight();
+        });
+
+        messageInput?.addEventListener("blur", () => {
+            window.setTimeout(() => {
+                setKeyboardOpenState(false);
+                applyViewportHeight();
+            }, 120);
+        });
 
         messageInput?.addEventListener("input", () => {
             autoresizeMessageInput();
