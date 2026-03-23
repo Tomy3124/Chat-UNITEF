@@ -44,6 +44,7 @@
                 data-chat-name="{{ departamento.nombre|lower }}"
                 data-last-message="{{ conversacion.ultimo_cuerpo|lower }}"
                 data-unread="{{ conversacion.no_leidos }}"
+                data-last-timestamp="{% if ultimo %}{{ ultimo.fecha|date:'U' }}{% else %}0{% endif %}"
                 data-favorite="{% if departamento.id == departamento_actual.id or forloop.counter <= 2 %}1{% else %}0{% endif %}">
                 {% if request.user.es_directiva %}<span class="wa-contact-checkbox"></span>{% endif %}
                 <div class="wa-chat-avatar">{{ departamento.nombre|slice:":1" }}</div>
@@ -333,6 +334,7 @@
         sendUrl: "{% url 'chat:enviar_mensaje' departamento_actual.id %}",
         clearChatUrl: "{% url 'chat:limpiar_chat' departamento_actual.id %}",
         markPanelReadUrl: "{% url 'chat:marcar_panel_como_leido' departamento_actual.id %}",
+        markChatReadUrl: "{% url 'chat:marcar_chat_como_leido' departamento_actual.id %}",
         deleteDepartmentsUrl: "{% url 'chat:eliminar_departamentos' %}",
         forwardTemplateUrl: "{% url 'chat:reenviar_mensaje' 0 %}",
         directivaId: "{{ directiva_activa_id }}",

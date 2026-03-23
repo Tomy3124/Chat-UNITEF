@@ -278,7 +278,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!attachInfo) {
             return;
         }
-        attachInfo.textContent = input?.files?.length ? `Adjunto: ${input.files[0].name}` : "";
+        attachInfo.textContent = input?.files?.length ? `Archivo: ${input.files[0].name}` : "";
     };
 
     const selectAttachmentSource = (source) => {
@@ -579,6 +579,14 @@ document.addEventListener("DOMContentLoaded", () => {
         return match ? Number(match[1]) : null;
     };
 
+    const payloadIsFromCurrentViewer = (payload) => Number(payload?.usuario_id || 0) === currentViewerId;
+
+    const shouldIncrementUnreadForPayload = (payload) =>
+        payload?.kind === "message" &&
+        payload?.action !== "deleted" &&
+        !payload?.es_sistema &&
+        !payloadIsFromCurrentViewer(payload);
+
     const updateUnreadBubble = (item, { reset = false, increment = 0 } = {}) => {
         const current = Number(item.dataset.unread || 0);
         const next = reset ? 0 : Math.max(0, current + increment);
@@ -634,10 +642,41 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         item.dataset.lastTimestamp = String(Number(payload.timestamp || Date.now()));
+        const items = Array.from(list.querySelectorAll(".wa-chat-item"));
+        const beforePositions = new Map(
+            items.map((chatItem) => [chatItem, chatItem.getBoundingClientRect()]),
+        );
+        const sortedItems = [...items].sort(
+            (a, b) => Number(b.dataset.lastTimestamp || 0) - Number(a.dataset.lastTimestamp || 0),
+        );
+
+        sortedItems.forEach((chatItem) => list.appendChild(chatItem));
+
+        sortedItems.forEach((chatItem) => {
+            const previousRect = beforePositions.get(chatItem);
+            if (!previousRect) {
+                return;
+            }
+            const nextRect = chatItem.getBoundingClientRect();
+            const deltaY = previousRect.top - nextRect.top;
+            if (Math.abs(deltaY) < 1 || typeof chatItem.animate !== "function") {
+                return;
+            }
+            chatItem.animate(
+                [
+                    { transform: `translateY(${deltaY}px)` },
+                    { transform: "translateY(0)" },
+                ],
+                {
+                    duration: 260,
+                    easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+                },
+            );
+        });
+
         item.classList.remove("is-activity-bump");
         void item.offsetWidth;
         item.classList.add("is-activity-bump");
-        list.prepend(item);
         window.setTimeout(() => item.classList.remove("is-activity-bump"), 320);
     };
 
@@ -760,6 +799,59 @@ document.addEventListener("DOMContentLoaded", () => {
     if (chatItems.length) {
         const wsProtocolSidebar = window.location.protocol === "https:" ? "wss" : "ws";
         const activeDepartmentId = getActiveDepartmentId();
+        const sidebarSocketReconnectTimers = new Map();
+        const sidebarSockets = new Map();
+        let sidebarSocketsShuttingDown = false;
+
+        const scheduleSidebarReconnect = (departamentoId, item) => {
+            if (sidebarSocketsShuttingDown) {
+                return;
+            }
+            if (sidebarSocketReconnectTimers.has(departamentoId)) {
+                return;
+            }
+            const timer = window.setTimeout(() => {
+                sidebarSocketReconnectTimers.delete(departamentoId);
+                connectConversationPreviewSocket(item, departamentoId);
+            }, 1500);
+            sidebarSocketReconnectTimers.set(departamentoId, timer);
+        };
+
+        const connectConversationPreviewSocket = (item, departamentoId) => {
+            const currentSocket = sidebarSockets.get(departamentoId);
+            if (currentSocket && (currentSocket.readyState === WebSocket.OPEN || currentSocket.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
+
+            const socket = new WebSocket(
+                `${wsProtocolSidebar}://${window.location.host}/ws/chat/departamento/${departamentoId}/`,
+            );
+            sidebarSockets.set(departamentoId, socket);
+
+            socket.onmessage = (event) => {
+                const payload = JSON.parse(event.data);
+                const viewerDirectivaId = Number(window.chatConfig?.directivaId || 0);
+                if (viewerDirectivaId && payload.directiva_id && Number(payload.directiva_id) !== viewerDirectivaId) {
+                    return;
+                }
+                updateConversationPreviewForItem(item, payload);
+                moveConversationItemToTop(item, payload);
+                if (shouldIncrementUnreadForPayload(payload)) {
+                    updateUnreadBubble(item, { increment: 1 });
+                }
+                notifyIncomingPayload(payload, item);
+                runChatFilters();
+            };
+            socket.onclose = () => {
+                if (sidebarSockets.get(departamentoId) === socket) {
+                    sidebarSockets.delete(departamentoId);
+                }
+                scheduleSidebarReconnect(departamentoId, item);
+            };
+            socket.onerror = () => {
+                socket.close();
+            };
+        };
 
         chatItems.forEach((item) => {
             const departamentoId = getDepartmentIdFromChatItem(item);
@@ -769,24 +861,13 @@ document.addEventListener("DOMContentLoaded", () => {
             if (activeDepartmentId && departamentoId === activeDepartmentId) {
                 return;
             }
+            connectConversationPreviewSocket(item, departamentoId);
+        });
 
-            const socket = new WebSocket(
-                `${wsProtocolSidebar}://${window.location.host}/ws/chat/departamento/${departamentoId}/`,
-            );
-            socket.onmessage = (event) => {
-                const payload = JSON.parse(event.data);
-                const viewerDirectivaId = Number(window.chatConfig?.directivaId || 0);
-                if (viewerDirectivaId && payload.directiva_id && Number(payload.directiva_id) !== viewerDirectivaId) {
-                    return;
-                }
-                updateConversationPreviewForItem(item, payload);
-                moveConversationItemToTop(item, payload);
-                if (payload.kind !== "notice" && payload.action !== "deleted") {
-                    updateUnreadBubble(item, { increment: 1 });
-                }
-                notifyIncomingPayload(payload, item);
-                runChatFilters();
-            };
+        window.addEventListener("beforeunload", () => {
+            sidebarSocketsShuttingDown = true;
+            sidebarSocketReconnectTimers.forEach((timer) => window.clearTimeout(timer));
+            sidebarSockets.forEach((socket) => socket.close());
         });
     }
 
@@ -1275,6 +1356,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let roomSocketReconnectTimer = null;
     let updatesPollTimer = null;
     let updatesFetchInFlight = false;
+    let chatReadSyncTimer = null;
+    let chatReadSyncInFlight = false;
+    let chatReadSyncQueued = false;
     const renderedIds = new Set(
         Array.from(messagesPanel.querySelectorAll("[data-message-id]"))
             .map((node) => Number(node.dataset.messageId))
@@ -1283,6 +1367,61 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const scrollToBottom = () => {
         messagesPanel.scrollTop = messagesPanel.scrollHeight;
+    };
+
+    const shouldAutoMarkCurrentChatAsRead = () =>
+        Boolean(window.chatConfig?.markChatReadUrl) && !document.hidden && document.hasFocus();
+
+    const syncCurrentChatAsRead = async () => {
+        if (!window.chatConfig?.markChatReadUrl || !shouldAutoMarkCurrentChatAsRead()) {
+            return;
+        }
+
+        if (chatReadSyncInFlight) {
+            chatReadSyncQueued = true;
+            return;
+        }
+
+        chatReadSyncInFlight = true;
+        try {
+            const formData = new FormData();
+            formData.append("csrfmiddlewaretoken", window.chatConfig.csrfToken || getCsrfToken());
+            const response = await fetch(window.chatConfig.markChatReadUrl, {
+                method: "POST",
+                body: formData,
+                headers: {
+                    "X-CSRFToken": formData.get("csrfmiddlewaretoken"),
+                },
+            });
+            if (response.ok) {
+                const activeItem = document.querySelector(".wa-chat-item.is-active");
+                if (activeItem) {
+                    updateUnreadBubble(activeItem, { reset: true });
+                    runChatFilters();
+                }
+            }
+        } catch {
+            // Mantener la sincronizacion silenciosa.
+        } finally {
+            chatReadSyncInFlight = false;
+            if (chatReadSyncQueued) {
+                chatReadSyncQueued = false;
+                scheduleCurrentChatReadSync();
+            }
+        }
+    };
+
+    const scheduleCurrentChatReadSync = (delay = 180) => {
+        if (!window.chatConfig?.markChatReadUrl) {
+            return;
+        }
+        if (chatReadSyncTimer) {
+            window.clearTimeout(chatReadSyncTimer);
+        }
+        chatReadSyncTimer = window.setTimeout(() => {
+            chatReadSyncTimer = null;
+            void syncCurrentChatAsRead();
+        }, delay);
     };
 
     const renderNoticeUpdate = (message) => {
@@ -1490,6 +1629,9 @@ document.addEventListener("DOMContentLoaded", () => {
             updateUnreadBubble(activeItem, { reset: true });
             moveConversationItemToTop(activeItem, message);
         }
+        if (!isMine && shouldAutoMarkCurrentChatAsRead()) {
+            scheduleCurrentChatReadSync();
+        }
         scrollToBottom();
     };
 
@@ -1520,6 +1662,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 roomSocketReconnectTimer = null;
             }
             scrollToBottom();
+            scheduleCurrentChatReadSync(0);
         };
         roomSocket.onclose = () => {
             if (roomSocketReconnectTimer) {
@@ -1585,8 +1728,12 @@ document.addEventListener("DOMContentLoaded", () => {
     updatesPollTimer = window.setInterval(pollConversationUpdates, 1000);
     document.addEventListener("visibilitychange", () => {
         if (!document.hidden) {
+            scheduleCurrentChatReadSync(0);
             pollConversationUpdates();
         }
+    });
+    window.addEventListener("focus", () => {
+        scheduleCurrentChatReadSync(0);
     });
 
     messagesPanel.addEventListener("click", (event) => {
@@ -1778,6 +1925,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         if (roomSocketReconnectTimer) {
             window.clearTimeout(roomSocketReconnectTimer);
+        }
+        if (chatReadSyncTimer) {
+            window.clearTimeout(chatReadSyncTimer);
         }
         roomSocket?.close();
     });

@@ -2618,7 +2618,10 @@ body {
 }
 
 .wa-send {
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+        "attach input send"
+        "info info info";
     width: 100%;
     min-width: 0;
 }
@@ -2636,6 +2639,7 @@ body {
 }
 
 .wa-send textarea {
+    grid-area: input;
     min-height: 44px;
     max-height: 144px;
     resize: none;
@@ -2662,6 +2666,7 @@ body {
 }
 
 .wa-send-submit {
+    grid-area: send;
     border: 0;
     background: #25d366;
     color: #06240f;
@@ -2728,6 +2733,7 @@ body {
 }
 
 .wa-attach-menu-wrap {
+    grid-area: attach;
     position: relative;
     z-index: 8;
 }
@@ -2772,7 +2778,7 @@ body {
 
 .wa-attach-info {
     display: none;
-    grid-column: 1 / -1;
+    grid-area: info;
     color: #90a7b5;
     font-size: 0.75rem;
     white-space: nowrap;

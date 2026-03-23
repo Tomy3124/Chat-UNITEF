@@ -213,8 +213,13 @@ def _obtener_conversaciones(usuario, departamentos):
                 "no_leidos_mensajes": no_leidos_mensajes,
                 "no_leidos_avisos": no_leidos_avisos,
                 "no_leidos_asignaciones": no_leidos_asignaciones,
+                "orden_actividad": ultimo_mensaje.id if ultimo_mensaje else 0,
             }
         )
+    conversaciones.sort(
+        key=lambda item: (item["orden_actividad"], item["departamento"].id),
+        reverse=True,
+    )
     return conversaciones
 
 
@@ -259,7 +264,7 @@ def _obtener_estado_paneles(usuario, departamento):
     }
 
 
-def _marcar_mensajes_como_leidos(usuario, departamento):
+def _marcar_chat_como_leido(usuario, departamento):
     filtro_directiva = _filtro_conversacion(usuario, departamento)
     ultimo_id_ajeno = (
         Mensaje.objects.filter(departamento=departamento, es_sistema=False)
@@ -270,6 +275,26 @@ def _marcar_mensajes_como_leidos(usuario, departamento):
         .values_list("id", flat=True)
         .first()
     ) or 0
+
+    lectura, _ = DepartamentoLectura.objects.get_or_create(
+        usuario=usuario,
+        departamento=departamento,
+        defaults={
+            "ultimo_mensaje_id": ultimo_id_ajeno,
+            "ultimo_aviso_id": 0,
+            "ultimo_asignacion_id": 0,
+        },
+    )
+    if ultimo_id_ajeno > lectura.ultimo_mensaje_id:
+        lectura.ultimo_mensaje_id = ultimo_id_ajeno
+        lectura.save(update_fields=["ultimo_mensaje_id", "actualizado_en"])
+
+    return lectura
+
+
+def _marcar_mensajes_como_leidos(usuario, departamento):
+    filtro_directiva = _filtro_conversacion(usuario, departamento)
+    lectura = _marcar_chat_como_leido(usuario, departamento)
     ultimo_aviso_id = (
         Aviso.objects.filter(departamento=departamento, tipo=Aviso.TIPO_AVISO)
         .filter(filtro_directiva)
@@ -284,20 +309,7 @@ def _marcar_mensajes_como_leidos(usuario, departamento):
         .values_list("id", flat=True)
         .first()
     ) or 0
-
-    lectura, _ = DepartamentoLectura.objects.get_or_create(
-        usuario=usuario,
-        departamento=departamento,
-        defaults={
-            "ultimo_mensaje_id": ultimo_id_ajeno,
-            "ultimo_aviso_id": ultimo_aviso_id,
-            "ultimo_asignacion_id": ultimo_asignacion_id,
-        },
-    )
     campos_a_actualizar = []
-    if ultimo_id_ajeno > lectura.ultimo_mensaje_id:
-        lectura.ultimo_mensaje_id = ultimo_id_ajeno
-        campos_a_actualizar.append("ultimo_mensaje_id")
     if ultimo_aviso_id > lectura.ultimo_aviso_id:
         lectura.ultimo_aviso_id = ultimo_aviso_id
         campos_a_actualizar.append("ultimo_aviso_id")
@@ -422,6 +434,14 @@ def marcar_panel_como_leido(request, departamento_id):
             "no_leidos_asignaciones": estado_actualizado["no_leidos_asignaciones"],
         }
     )
+
+
+@login_required
+@require_POST
+def marcar_chat_como_leido(request, departamento_id):
+    departamento = _obtener_departamento_visible(request.user, departamento_id)
+    _marcar_chat_como_leido(request.user, departamento)
+    return JsonResponse({"ok": True, "no_leidos_mensajes": 0})
 
 
 @login_required
