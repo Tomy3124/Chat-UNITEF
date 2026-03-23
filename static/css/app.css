@@ -2524,6 +2524,47 @@ body {
     border: 1px solid rgba(120, 153, 171, 0.2);
 }
 
+.wa-file-card.is-media {
+    gap: 0.7rem;
+}
+
+.wa-media-preview {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(5, 13, 18, 0.6);
+    cursor: pointer;
+}
+
+.wa-media-preview img,
+.wa-media-preview video {
+    display: block;
+    width: 100%;
+    max-height: 240px;
+    object-fit: cover;
+    background: #0b141a;
+}
+
+.wa-media-play {
+    position: absolute;
+    inset: 50% auto auto 50%;
+    transform: translate(-50%, -50%);
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: rgba(8, 20, 27, 0.72);
+    color: #f5fbff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+}
+
 .wa-file-name {
     font-weight: 600;
     color: #eff6fa;
@@ -2695,7 +2736,7 @@ body {
     position: absolute;
     left: 0;
     bottom: calc(100% + 0.4rem);
-    min-width: 110px;
+    min-width: 136px;
     padding: 0.25rem;
     border-radius: 10px;
     background: #1a262e;
@@ -2832,6 +2873,10 @@ body {
 .wa-note p {
     margin: 0;
     color: #c9d3d8;
+}
+
+.wa-note .wa-file-card {
+    margin-top: 0.75rem;
 }
 
 .wa-note-actions,
@@ -3174,6 +3219,15 @@ body.theme-light .wa-last-author {
 body.theme-light .wa-file-card {
     background: rgba(239, 248, 253, 0.95);
     border-color: #d3e2ea;
+}
+
+body.theme-light .wa-media-preview {
+    background: rgba(219, 234, 242, 0.85);
+}
+
+body.theme-light .wa-media-play {
+    background: rgba(18, 59, 89, 0.72);
+    color: #ffffff;
 }
 
 body.theme-light .wa-file-name {
@@ -3544,6 +3598,11 @@ body:not(.theme-light) .login-pulse-bar span {
         padding: 0.62rem 0.7rem;
     }
 
+    .wa-media-preview img,
+    .wa-media-preview video {
+        max-height: 190px;
+    }
+
     .wa-file-actions {
         gap: 0.38rem;
     }
@@ -3667,6 +3726,11 @@ body:not(.theme-light) .login-pulse-bar span {
         flex-wrap: wrap;
     }
 
+    .wa-note .wa-file-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .wa-note-action,
     .wa-note-actions button {
         min-height: 34px;
@@ -3720,6 +3784,11 @@ body:not(.theme-light) .login-pulse-bar span {
         min-width: 28px;
     }
 
+    .wa-attach-menu {
+        left: 0;
+        right: auto;
+    }
+
     .wa-send-submit {
         width: 38px;
         height: 38px;
@@ -3751,6 +3820,11 @@ body:not(.theme-light) .login-pulse-bar span {
 
     .wa-bubble {
         max-width: calc(100% - 1.1rem);
+    }
+
+    .wa-media-preview img,
+    .wa-media-preview video {
+        max-height: 164px;
     }
 
     .wa-composer {

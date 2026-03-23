@@ -7,6 +7,37 @@ from avisos.models import Aviso
 from chat.models import Mensaje
 
 
+def _file_metadata(field_file, open_url, download_url):
+    if not field_file:
+        return {
+            "archivo_url": "",
+            "archivo_nombre": "",
+            "archivo_abrir_url": "",
+            "archivo_descargar_url": "",
+            "archivo_tipo": "",
+            "archivo_es_imagen": False,
+            "archivo_es_video": False,
+        }
+
+    name = field_file.name.split("/")[-1]
+    lower_name = name.lower()
+    image_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".heic")
+    video_exts = (".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv", ".3gp")
+    is_image = lower_name.endswith(image_exts)
+    is_video = lower_name.endswith(video_exts)
+    file_type = "image" if is_image else "video" if is_video else "file"
+
+    return {
+        "archivo_url": field_file.url,
+        "archivo_nombre": name,
+        "archivo_abrir_url": open_url,
+        "archivo_descargar_url": download_url,
+        "archivo_tipo": file_type,
+        "archivo_es_imagen": is_image,
+        "archivo_es_video": is_video,
+    }
+
+
 def _autor_tipo_label(usuario):
     if not usuario:
         return "Sistema"
@@ -39,10 +70,11 @@ def serializar_mensaje(mensaje):
         "contenido": mensaje.contenido,
         "fecha": fecha_local.strftime("%I:%M %p"),
         "timestamp": int(fecha_local.timestamp() * 1000),
-        "archivo_url": mensaje.archivo.url if mensaje.archivo else "",
-        "archivo_nombre": mensaje.archivo.name.split("/")[-1] if mensaje.archivo else "",
-        "archivo_abrir_url": reverse("chat:abrir_archivo_mensaje", args=[mensaje.id]) if mensaje.archivo else "",
-        "archivo_descargar_url": reverse("chat:descargar_archivo_mensaje", args=[mensaje.id]) if mensaje.archivo else "",
+        **_file_metadata(
+            mensaje.archivo,
+            reverse("chat:abrir_archivo_mensaje", args=[mensaje.id]) if mensaje.archivo else "",
+            reverse("chat:descargar_archivo_mensaje", args=[mensaje.id]) if mensaje.archivo else "",
+        ),
         "es_sistema": mensaje.es_sistema,
     }
 
@@ -68,6 +100,11 @@ def serializar_aviso(aviso):
         "fecha": fecha_local.strftime("%d/%m/%Y %I:%M %p"),
         "hora": fecha_local.strftime("%I:%M %p"),
         "timestamp": int(fecha_local.timestamp() * 1000),
+        **_file_metadata(
+            aviso.archivo,
+            reverse("chat:abrir_archivo_aviso", args=[aviso.id]) if aviso.archivo else "",
+            reverse("chat:descargar_archivo_aviso", args=[aviso.id]) if aviso.archivo else "",
+        ),
     }
 
 
@@ -123,10 +160,11 @@ def emitir_eliminacion_aviso(aviso_id, departamento_id):
     )
 
 
-def crear_aviso_y_mensaje(departamento, titulo, contenido, tipo=Aviso.TIPO_AVISO, directiva=None):
+def crear_aviso_y_mensaje(departamento, titulo, contenido, tipo=Aviso.TIPO_AVISO, directiva=None, archivo=None):
     aviso = Aviso.objects.create(
         titulo=titulo,
         contenido=contenido,
+        archivo=archivo,
         tipo=tipo,
         departamento=departamento,
         directiva=directiva,

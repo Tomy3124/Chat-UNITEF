@@ -109,7 +109,39 @@
                 <p>{{ mensaje.contenido }}</p>
                 {% endif %}
                 {% if mensaje.archivo %}
-                <div class="wa-file-card">
+                <div class="wa-file-card {% if mensaje.archivo.name|lower|slice:'-4:' == '.mp4' or mensaje.archivo.name|lower|slice:'-5:' == '.webm' or mensaje.archivo.name|lower|slice:'-4:' == '.mov' %}is-media{% endif %}">
+                    {% with archivo_nombre=mensaje.archivo.name|cut:"chat/archivos/"|lower %}
+                    {% if '.png' in archivo_nombre or '.jpg' in archivo_nombre or '.jpeg' in archivo_nombre or '.gif' in archivo_nombre or '.webp' in archivo_nombre or '.bmp' in archivo_nombre or '.svg' in archivo_nombre or '.heic' in archivo_nombre %}
+                    <button
+                        type="button"
+                        class="wa-media-preview"
+                        data-media-action
+                        data-media-kind="image"
+                        data-media-open-url="{% url 'chat:abrir_archivo_mensaje' mensaje.id %}"
+                        data-media-download-url="{% url 'chat:descargar_archivo_mensaje' mensaje.id %}"
+                        data-media-name="{{ mensaje.archivo.name|cut:'chat/archivos/' }}"
+                        data-delete-url="{% url 'chat:eliminar_mensaje' mensaje.id %}"
+                        data-forward-url="{% url 'chat:reenviar_mensaje' mensaje.id %}">
+                        <img src="{% url 'chat:abrir_archivo_mensaje' mensaje.id %}" alt="{{ mensaje.archivo.name|cut:'chat/archivos/' }}">
+                    </button>
+                    {% elif '.mp4' in archivo_nombre or '.webm' in archivo_nombre or '.mov' in archivo_nombre or '.m4v' in archivo_nombre or '.avi' in archivo_nombre or '.mkv' in archivo_nombre or '.3gp' in archivo_nombre %}
+                    <button
+                        type="button"
+                        class="wa-media-preview"
+                        data-media-action
+                        data-media-kind="video"
+                        data-media-open-url="{% url 'chat:abrir_archivo_mensaje' mensaje.id %}"
+                        data-media-download-url="{% url 'chat:descargar_archivo_mensaje' mensaje.id %}"
+                        data-media-name="{{ mensaje.archivo.name|cut:'chat/archivos/' }}"
+                        data-delete-url="{% url 'chat:eliminar_mensaje' mensaje.id %}"
+                        data-forward-url="{% url 'chat:reenviar_mensaje' mensaje.id %}">
+                        <video preload="metadata" muted playsinline>
+                            <source src="{% url 'chat:abrir_archivo_mensaje' mensaje.id %}">
+                        </video>
+                        <span class="wa-media-play">▶</span>
+                    </button>
+                    {% endif %}
+                    {% endwith %}
                     <div class="wa-file-name">📄 {{ mensaje.archivo.name|cut:"chat/archivos/" }}</div>
                     <div class="wa-file-actions">
                         <a class="wa-file-link" href="{% url 'chat:abrir_archivo_mensaje' mensaje.id %}" target="_blank" rel="noopener">Abrir</a>
@@ -141,9 +173,13 @@
                     <button type="button" class="wa-attach" id="attachToggle" title="Adjuntar" aria-label="Adjuntar archivo">+</button>
                     <div class="wa-attach-menu" id="attachMenu">
                         <button type="button" id="attachFileBtn">Archivo</button>
+                        <button type="button" id="attachImageBtn">Imagen</button>
+                        <button type="button" id="attachVideoBtn">Video</button>
                     </div>
                 </div>
                 <input id="waFileInput" type="file" name="archivo" class="d-none">
+                <input id="waImageInput" type="file" accept="image/*" class="d-none">
+                <input id="waVideoInput" type="file" accept="video/*" class="d-none">
                 <textarea id="messageInput" placeholder="Escribe un mensaje" rows="1"></textarea>
                 <span id="attachInfo" class="wa-attach-info" aria-live="polite"></span>
                 <button type="submit" class="wa-send-submit" aria-label="Enviar mensaje">Enviar</button>
@@ -162,6 +198,29 @@
                     <h3>{{ asignacion.titulo }}</h3>
                     <p>{{ asignacion.contenido }}</p>
                     <small>{{ asignacion.fecha|date:"d/m/Y h:i A" }}</small>
+                    {% if asignacion.archivo %}
+                    <div class="wa-file-card {% if '.mp4' in asignacion.archivo.name|lower or '.webm' in asignacion.archivo.name|lower or '.mov' in asignacion.archivo.name|lower %}is-media{% endif %}">
+                        {% with archivo_nombre=asignacion.archivo.name|lower %}
+                        {% if '.png' in archivo_nombre or '.jpg' in archivo_nombre or '.jpeg' in archivo_nombre or '.gif' in archivo_nombre or '.webp' in archivo_nombre or '.bmp' in archivo_nombre or '.svg' in archivo_nombre or '.heic' in archivo_nombre %}
+                        <a class="wa-media-preview" href="{% url 'chat:abrir_archivo_aviso' asignacion.id %}" target="_blank" rel="noopener">
+                            <img src="{% url 'chat:abrir_archivo_aviso' asignacion.id %}" alt="{{ asignacion.archivo.name|cut:'avisos/adjuntos/' }}">
+                        </a>
+                        {% elif '.mp4' in archivo_nombre or '.webm' in archivo_nombre or '.mov' in archivo_nombre or '.m4v' in archivo_nombre or '.avi' in archivo_nombre or '.mkv' in archivo_nombre or '.3gp' in archivo_nombre %}
+                        <a class="wa-media-preview" href="{% url 'chat:abrir_archivo_aviso' asignacion.id %}" target="_blank" rel="noopener">
+                            <video preload="metadata" muted playsinline>
+                                <source src="{% url 'chat:abrir_archivo_aviso' asignacion.id %}">
+                            </video>
+                            <span class="wa-media-play">▶</span>
+                        </a>
+                        {% endif %}
+                        {% endwith %}
+                        <div class="wa-file-name">📄 {{ asignacion.archivo.name|cut:"avisos/adjuntos/" }}</div>
+                        <div class="wa-file-actions">
+                            <a class="wa-file-link" href="{% url 'chat:abrir_archivo_aviso' asignacion.id %}" target="_blank" rel="noopener">Ver</a>
+                            <a class="wa-file-link" href="{% url 'chat:descargar_archivo_aviso' asignacion.id %}">Descargar</a>
+                        </div>
+                    </div>
+                    {% endif %}
                     {% if request.user.es_directiva %}
                     <div class="wa-note-actions">
                         <button
@@ -239,7 +298,7 @@
 
             <section class="drawer-block">
                 <h3>Enviar aviso o asignacion</h3>
-                <form method="post" action="{% url 'chat:publicar_aviso' departamento_actual.id %}" class="stack-form compact-form">
+                <form method="post" action="{% url 'chat:publicar_aviso' departamento_actual.id %}" class="stack-form compact-form" enctype="multipart/form-data">
                     {% csrf_token %}
                     {{ aviso_form.as_p }}
                     <button type="submit" class="btn btn-primary w-100">Publicar</button>
@@ -252,6 +311,7 @@
 
 <div id="messageActionMenu" class="wa-message-menu" hidden>
     <button type="button" data-menu-action="edit">Editar</button>
+    <button type="button" data-menu-action="save">Guardar</button>
     <button type="button" data-menu-action="delete">Eliminar</button>
     <button type="button" data-menu-action="forward">Reenviar</button>
 </div>

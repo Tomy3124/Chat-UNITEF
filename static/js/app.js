@@ -26,9 +26,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const messageForm = document.getElementById("messageForm");
     const messageInput = document.getElementById("messageInput");
     const fileInput = document.getElementById("waFileInput");
+    const imageInput = document.getElementById("waImageInput");
+    const videoInput = document.getElementById("waVideoInput");
     const attachToggle = document.getElementById("attachToggle");
     const attachMenu = document.getElementById("attachMenu");
     const attachFileBtn = document.getElementById("attachFileBtn");
+    const attachImageBtn = document.getElementById("attachImageBtn");
+    const attachVideoBtn = document.getElementById("attachVideoBtn");
     const attachInfo = document.getElementById("attachInfo");
     const messagesPanel = document.getElementById("messages");
     const headerChatMenuToggle = document.getElementById("headerChatMenuToggle");
@@ -61,6 +65,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let messageSelectionMode = false;
     const selectedMessages = new Set();
     const panelReadRequests = new Set();
+    let activeAttachmentSource = "file";
 
     const getCsrfToken = () => {
         if (window.chatConfig?.csrfToken) {
@@ -248,6 +253,72 @@ document.addEventListener("DOMContentLoaded", () => {
         messageInput.style.height = `${Math.max(nextHeight, 44)}px`;
     };
 
+    const isDesktopViewport = () => window.matchMedia("(min-width: 901px)").matches;
+
+    const getActiveFileInput = () => {
+        if (activeAttachmentSource === "image" && imageInput) {
+            return imageInput;
+        }
+        if (activeAttachmentSource === "video" && videoInput) {
+            return videoInput;
+        }
+        return fileInput;
+    };
+
+    const clearInactiveFileInputs = () => {
+        [fileInput, imageInput, videoInput].forEach((input) => {
+            if (input && input !== getActiveFileInput()) {
+                input.value = "";
+            }
+        });
+    };
+
+    const updateAttachInfo = () => {
+        const input = getActiveFileInput();
+        if (!attachInfo) {
+            return;
+        }
+        attachInfo.textContent = input?.files?.length ? `Adjunto: ${input.files[0].name}` : "";
+    };
+
+    const selectAttachmentSource = (source) => {
+        activeAttachmentSource = source;
+        clearInactiveFileInputs();
+        updateAttachInfo();
+    };
+
+    const isImageFile = (name) => /\.(png|jpe?g|gif|webp|bmp|svg|heic)$/i.test(name || "");
+    const isVideoFile = (name) => /\.(mp4|webm|mov|m4v|avi|mkv|3gp)$/i.test(name || "");
+
+    const buildMediaPreviewHtml = (message) => {
+        if (!message.archivo_url || (!message.archivo_es_imagen && !message.archivo_es_video)) {
+            return "";
+        }
+
+        const mediaKind = message.archivo_es_video ? "video" : "image";
+        const mediaNode = message.archivo_es_video
+            ? `
+                <video preload="metadata" muted playsinline>
+                    <source src="${message.archivo_abrir_url || message.archivo_url}">
+                </video>
+                <span class="wa-media-play">▶</span>
+            `
+            : `<img src="${message.archivo_abrir_url || message.archivo_url}" alt="${escapeHtml(message.archivo_nombre || "Adjunto")}">`;
+
+        return `
+            <button
+                type="button"
+                class="wa-media-preview"
+                data-media-action
+                data-media-kind="${mediaKind}"
+                data-media-open-url="${message.archivo_abrir_url || message.archivo_url}"
+                data-media-download-url="${message.archivo_descargar_url || message.archivo_url}"
+                data-media-name="${escapeHtml(message.archivo_nombre || "Adjunto")}">
+                ${mediaNode}
+            </button>
+        `;
+    };
+
     const buildFileAttachmentHtml = (message) => {
         if (!message.archivo_url) {
             return "";
@@ -256,7 +327,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const openUrl = message.archivo_abrir_url || message.archivo_url;
         const downloadUrl = message.archivo_descargar_url || message.archivo_url;
         return `
-            <div class="wa-file-card">
+            <div class="wa-file-card${message.archivo_es_imagen || message.archivo_es_video ? " is-media" : ""}">
+                ${buildMediaPreviewHtml(message)}
                 <div class="wa-file-name">📄 ${escapeHtml(message.archivo_nombre || "Archivo")}</div>
                 <div class="wa-file-actions">
                     <a class="wa-file-link" href="${openUrl}" target="_blank" rel="noopener">Abrir</a>
@@ -823,8 +895,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const isMine = bubble.dataset.isMine === "1";
         const editButton = messageActionMenu.querySelector("[data-menu-action='edit']");
+        const saveButton = messageActionMenu.querySelector("[data-menu-action='save']");
         if (editButton) {
             editButton.hidden = !isMine;
+        }
+        if (saveButton) {
+            saveButton.hidden = !bubble.querySelector(".wa-file-link[href]");
         }
 
         const x = originEvent.clientX;
@@ -963,6 +1039,76 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     };
 
+    const runBubbleSave = (bubble) => {
+        const saveLink = bubble.querySelector(".wa-file-link[href]");
+        if (!saveLink) {
+            return;
+        }
+        window.open(saveLink.href, "_blank", "noopener");
+    };
+
+    const runMediaActionMenu = (bubble) => {
+        const mediaTrigger = bubble.querySelector("[data-media-action]");
+        if (!(mediaTrigger instanceof HTMLElement)) {
+            return;
+        }
+
+        const isMine = bubble.dataset.isMine === "1";
+        openWaModal({
+            title: mediaTrigger.dataset.mediaKind === "video" ? "Video" : "Imagen",
+            body: `<p>${escapeHtml(mediaTrigger.dataset.mediaName || "Adjunto")}</p>`,
+            actions: [
+                {
+                    label: "Guardar",
+                    onClick: () => {
+                        window.open(mediaTrigger.dataset.mediaDownloadUrl || mediaTrigger.dataset.mediaOpenUrl || "", "_blank", "noopener");
+                    },
+                },
+                {
+                    label: "Reenviar",
+                    onClick: () => {
+                        closeWaModal();
+                        runBubbleForward(bubble);
+                    },
+                },
+                {
+                    label: "Eliminar para mi",
+                    danger: true,
+                    onClick: async () => {
+                        const formData = new FormData();
+                        formData.append("scope", "me");
+                        const { ok, payload } = await postForm(bubble.dataset.deleteUrl, formData);
+                        if (!ok || !payload?.ok) {
+                            window.alert(payload?.error || "No se pudo eliminar.");
+                            return;
+                        }
+                        bubble.remove();
+                        closeWaModal();
+                    },
+                },
+                ...(isMine
+                    ? [
+                        {
+                            label: "Eliminar para todos",
+                            danger: true,
+                            onClick: async () => {
+                                const formData = new FormData();
+                                formData.append("scope", "all");
+                                const { ok, payload } = await postForm(bubble.dataset.deleteUrl, formData);
+                                if (!ok || !payload?.ok) {
+                                    window.alert(payload?.error || "No se pudo eliminar para todos.");
+                                    return;
+                                }
+                                bubble.remove();
+                                closeWaModal();
+                            },
+                        },
+                    ]
+                    : []),
+            ],
+        });
+    };
+
     if (messageActionMenu) {
         messageActionMenu.addEventListener("click", async (event) => {
             const target = event.target;
@@ -974,6 +1120,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (action === "edit" && isMine) {
                 runBubbleEdit(selectedBubble);
+                closeMessageMenu();
+                return;
+            }
+
+            if (action === "save") {
+                runBubbleSave(selectedBubble);
                 closeMessageMenu();
                 return;
             }
@@ -1136,6 +1288,33 @@ document.addEventListener("DOMContentLoaded", () => {
     const renderNoticeUpdate = (message) => {
         const panelName = message.tipo === "asignacion" ? "assignments" : "notices";
         const activeItem = document.querySelector(".wa-chat-item.is-active");
+        const buildNoticeAttachmentHtml = (notice) => {
+            if (!notice.archivo_url) {
+                return "";
+            }
+
+            const previewHtml = (notice.archivo_es_imagen || notice.archivo_es_video)
+                ? `
+                    <a class="wa-media-preview" href="${notice.archivo_abrir_url || notice.archivo_url}" target="_blank" rel="noopener">
+                        ${notice.archivo_es_video
+                            ? `<video preload="metadata" muted playsinline><source src="${notice.archivo_abrir_url || notice.archivo_url}"></video><span class="wa-media-play">▶</span>`
+                            : `<img src="${notice.archivo_abrir_url || notice.archivo_url}" alt="${escapeHtml(notice.archivo_nombre || "Adjunto")}">`}
+                    </a>
+                `
+                : "";
+
+            return `
+                <div class="wa-file-card${notice.archivo_es_imagen || notice.archivo_es_video ? " is-media" : ""}">
+                    ${previewHtml}
+                    <div class="wa-file-name">📄 ${escapeHtml(notice.archivo_nombre || "Adjunto")}</div>
+                    <div class="wa-file-actions">
+                        <a class="wa-file-link" href="${notice.archivo_abrir_url || notice.archivo_url}" target="_blank" rel="noopener">Ver</a>
+                        <a class="wa-file-link" href="${notice.archivo_descargar_url || notice.archivo_url}">Descargar</a>
+                    </div>
+                </div>
+            `;
+        };
+
         if (message.action === "deleted") {
             document.querySelector(`[data-notice-id="${message.id}"]`)?.remove();
             return;
@@ -1159,6 +1338,10 @@ document.addEventListener("DOMContentLoaded", () => {
             if (contentNode) contentNode.textContent = message.contenido || "";
             if (dateNode) dateNode.textContent = message.fecha || "";
             if (typeNode) typeNode.textContent = isAssignment ? "Asignacion" : "Aviso";
+            existingNote.querySelector(".wa-file-card")?.remove();
+            if (message.archivo_url) {
+                existingNote.insertAdjacentHTML("beforeend", buildNoticeAttachmentHtml(message));
+            }
             existingNote.dataset.panelKind = panelName;
             if (activeItem) {
                 updateActiveConversationPreview(message);
@@ -1188,6 +1371,10 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (contentNode) contentNode.textContent = message.contenido || "";
                     if (dateNode) dateNode.textContent = message.fecha || "";
                     if (typeNode) typeNode.textContent = isAssignment ? "Asignacion" : "Aviso";
+                    note.querySelector(".wa-file-card")?.remove();
+                    if (message.archivo_url) {
+                        note.insertAdjacentHTML("beforeend", buildNoticeAttachmentHtml(message));
+                    }
                 }
             });
             return;
@@ -1202,6 +1389,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <h3>${escapeHtml(message.titulo || "Actualizacion")}</h3>
             <p>${escapeHtml(message.contenido || "")}</p>
             <small>${escapeHtml(message.fecha)}</small>
+            ${buildNoticeAttachmentHtml(message)}
         `;
         target.prepend(article);
 
@@ -1414,6 +1602,11 @@ document.addEventListener("DOMContentLoaded", () => {
             closeMessageMenu();
             return;
         }
+        if (target.closest("[data-media-action]")) {
+            runMediaActionMenu(bubble);
+            closeMessageMenu();
+            return;
+        }
         if (messageSelectionMode) {
             const id = bubble.dataset.messageId;
             if (selectedMessages.has(id)) {
@@ -1437,16 +1630,43 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (attachFileBtn && fileInput) {
         attachFileBtn.addEventListener("click", () => {
+            selectAttachmentSource("file");
             attachMenu?.classList.remove("is-open");
             fileInput.click();
         });
     }
 
-    if (fileInput && attachInfo) {
-        fileInput.addEventListener("change", () => {
-            attachInfo.textContent = fileInput.files?.length ? `Adjunto: ${fileInput.files[0].name}` : "";
+    if (attachImageBtn && imageInput) {
+        attachImageBtn.addEventListener("click", () => {
+            selectAttachmentSource("image");
+            attachMenu?.classList.remove("is-open");
+            imageInput.click();
         });
     }
+
+    if (attachVideoBtn && videoInput) {
+        attachVideoBtn.addEventListener("click", () => {
+            selectAttachmentSource("video");
+            attachMenu?.classList.remove("is-open");
+            videoInput.click();
+        });
+    }
+
+    [fileInput, imageInput, videoInput].forEach((input) => {
+        if (!input) {
+            return;
+        }
+        input.addEventListener("change", () => {
+            if (input === imageInput) {
+                selectAttachmentSource("image");
+            } else if (input === videoInput) {
+                selectAttachmentSource("video");
+            } else {
+                selectAttachmentSource("file");
+            }
+            updateAttachInfo();
+        });
+    });
 
     document.addEventListener("click", (event) => {
         const target = event.target;
@@ -1477,10 +1697,22 @@ document.addEventListener("DOMContentLoaded", () => {
             autoresizeMessageInput();
         });
 
+        messageInput?.addEventListener("keydown", (event) => {
+            if (event.key !== "Enter" || event.shiftKey) {
+                return;
+            }
+            if (!isDesktopViewport()) {
+                return;
+            }
+            event.preventDefault();
+            messageForm.requestSubmit();
+        });
+
         messageForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             const contenido = messageInput.value.trim();
-            const hasFile = Boolean(fileInput?.files?.length);
+            const activeFileInput = getActiveFileInput();
+            const hasFile = Boolean(activeFileInput?.files?.length);
             if (!contenido && !hasFile) {
                 return;
             }
@@ -1490,8 +1722,8 @@ document.addEventListener("DOMContentLoaded", () => {
             if (window.chatConfig.directivaId) {
                 formData.append("directiva_id", window.chatConfig.directivaId);
             }
-            if (hasFile && fileInput) {
-                formData.append("archivo", fileInput.files[0]);
+            if (hasFile && activeFileInput) {
+                formData.append("archivo", activeFileInput.files[0]);
             }
 
             const response = await fetch(window.chatConfig.sendUrl, {
@@ -1513,12 +1745,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
             messageInput.value = "";
             autoresizeMessageInput();
-            if (fileInput) {
-                fileInput.value = "";
-            }
-            if (attachInfo) {
-                attachInfo.textContent = "";
-            }
+            [fileInput, imageInput, videoInput].forEach((input) => {
+                if (input) {
+                    input.value = "";
+                }
+            });
+            activeAttachmentSource = "file";
+            updateAttachInfo();
             attachMenu?.classList.remove("is-open");
             messageInput.focus();
         });

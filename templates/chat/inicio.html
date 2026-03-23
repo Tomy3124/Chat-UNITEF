@@ -102,7 +102,7 @@
 
         <section class="drawer-block">
             <h3>Enviar aviso o asignacion</h3>
-            <form method="post" action="{% url 'chat:publicar_aviso_global' %}" class="stack-form compact-form">
+            <form method="post" action="{% url 'chat:publicar_aviso_global' %}" class="stack-form compact-form" enctype="multipart/form-data">
                 {% csrf_token %}
                 <p>
                     <label for="id_departamento_id">Departamento</label>

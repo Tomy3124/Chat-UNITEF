@@ -11,6 +11,7 @@ class Aviso(models.Model):
 
     titulo = models.CharField(max_length=180)
     contenido = models.TextField()
+    archivo = models.FileField(upload_to="avisos/adjuntos/", blank=True, null=True)
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default=TIPO_AVISO)
     departamento = models.ForeignKey(
         "departamentos.Departamento",

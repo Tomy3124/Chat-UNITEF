@@ -2,7 +2,9 @@ from django.urls import path
 
 from chat.views import (
     abrir_archivo_mensaje,
+    abrir_archivo_aviso,
     crear_departamento,
+    descargar_archivo_aviso,
     descargar_archivo_mensaje,
     editar_aviso,
     editar_mensaje,
@@ -33,6 +35,8 @@ urlpatterns = [
     path("chat/departamento/<int:departamento_id>/panel-leido/", marcar_panel_como_leido, name="marcar_panel_como_leido"),
     path("chat/mensaje/<int:mensaje_id>/archivo/abrir/", abrir_archivo_mensaje, name="abrir_archivo_mensaje"),
     path("chat/mensaje/<int:mensaje_id>/archivo/descargar/", descargar_archivo_mensaje, name="descargar_archivo_mensaje"),
+    path("chat/aviso/<int:aviso_id>/archivo/abrir/", abrir_archivo_aviso, name="abrir_archivo_aviso"),
+    path("chat/aviso/<int:aviso_id>/archivo/descargar/", descargar_archivo_aviso, name="descargar_archivo_aviso"),
     path("chat/departamento/<int:departamento_id>/avisos/", publicar_aviso, name="publicar_aviso"),
     path("chat/departamento/<int:departamento_id>/limpiar/", limpiar_chat, name="limpiar_chat"),
     path("chat/mensaje/<int:mensaje_id>/editar/", editar_mensaje, name="editar_mensaje"),

@@ -68,6 +68,24 @@ def _obtener_mensaje_visible(usuario, mensaje_id):
     return mensaje
 
 
+def _obtener_aviso_visible(usuario, aviso_id):
+    aviso = get_object_or_404(
+        Aviso.objects.select_related("departamento", "directiva"),
+        pk=aviso_id,
+    )
+    _obtener_departamento_visible(usuario, aviso.departamento_id)
+
+    if aviso.directiva_id:
+        if usuario.es_directiva and aviso.directiva_id != usuario.id:
+            raise PermissionDenied("No puedes acceder a este archivo.")
+        if usuario.es_departamento:
+            directiva_esperada = _resolver_directiva_destino(usuario, aviso.departamento, directiva_id=aviso.directiva_id)
+            if directiva_esperada and aviso.directiva_id != directiva_esperada.id:
+                raise PermissionDenied("No puedes acceder a este archivo.")
+
+    return aviso
+
+
 def _filtro_directiva(usuario):
     if usuario.es_directiva:
         return Q(directiva=usuario)
@@ -463,7 +481,7 @@ def obtener_actualizaciones(request, departamento_id):
 def publicar_aviso_global(request):
     _requiere_directiva(request.user)
     departamento = _obtener_departamento_visible(request.user, request.POST.get("departamento_id"))
-    form = AvisoDirectivaForm(request.POST)
+    form = AvisoDirectivaForm(request.POST, request.FILES)
     if not form.is_valid():
         return redirect("chat:home")
 
@@ -473,6 +491,7 @@ def publicar_aviso_global(request):
         titulo=form.cleaned_data["titulo"],
         contenido=form.cleaned_data["contenido"],
         tipo=form.cleaned_data["tipo"],
+        archivo=form.cleaned_data.get("archivo"),
     )
     return redirect("chat:sala", departamento_id=departamento.id)
 
@@ -556,6 +575,38 @@ def descargar_archivo_mensaje(request, mensaje_id):
         mensaje.archivo,
         as_attachment=True,
         filename=mensaje.archivo.name.split("/")[-1],
+        content_type=content_type,
+    )
+
+
+@login_required
+def abrir_archivo_aviso(request, aviso_id):
+    aviso = _obtener_aviso_visible(request.user, aviso_id)
+    if not aviso.archivo:
+        raise Http404("Archivo no disponible.")
+
+    aviso.archivo.open("rb")
+    content_type = mimetypes.guess_type(aviso.archivo.name)[0] or "application/octet-stream"
+    return FileResponse(
+        aviso.archivo,
+        as_attachment=False,
+        filename=aviso.archivo.name.split("/")[-1],
+        content_type=content_type,
+    )
+
+
+@login_required
+def descargar_archivo_aviso(request, aviso_id):
+    aviso = _obtener_aviso_visible(request.user, aviso_id)
+    if not aviso.archivo:
+        raise Http404("Archivo no disponible.")
+
+    aviso.archivo.open("rb")
+    content_type = mimetypes.guess_type(aviso.archivo.name)[0] or "application/octet-stream"
+    return FileResponse(
+        aviso.archivo,
+        as_attachment=True,
+        filename=aviso.archivo.name.split("/")[-1],
         content_type=content_type,
     )
 
@@ -670,7 +721,7 @@ def limpiar_chat(request, departamento_id):
 def editar_aviso(request, aviso_id):
     _requiere_directiva(request.user)
     aviso = get_object_or_404(Aviso, pk=aviso_id, directiva=request.user)
-    form = AvisoDirectivaForm(request.POST, instance=aviso)
+    form = AvisoDirectivaForm(request.POST, request.FILES, instance=aviso)
     if not form.is_valid():
         return JsonResponse({"ok": False, "error": "No se pudo editar el aviso."}, status=400)
     aviso = form.save()
@@ -682,6 +733,7 @@ def editar_aviso(request, aviso_id):
             "contenido": aviso.contenido,
             "tipo": aviso.tipo,
             "fecha": aviso.fecha.strftime("%d/%m/%Y %I:%M %p"),
+            "archivo_nombre": aviso.archivo.name.split("/")[-1] if aviso.archivo else "",
         }
     )
 
@@ -703,7 +755,7 @@ def eliminar_aviso(request, aviso_id):
 def publicar_aviso(request, departamento_id):
     _requiere_directiva(request.user)
     departamento = _obtener_departamento_visible(request.user, departamento_id)
-    form = AvisoDirectivaForm(request.POST)
+    form = AvisoDirectivaForm(request.POST, request.FILES)
     if not form.is_valid():
         return redirect("chat:sala", departamento_id=departamento.id)
 
@@ -713,5 +765,6 @@ def publicar_aviso(request, departamento_id):
         titulo=form.cleaned_data["titulo"],
         contenido=form.cleaned_data["contenido"],
         tipo=form.cleaned_data["tipo"],
+        archivo=form.cleaned_data.get("archivo"),
     )
     return redirect("chat:sala", departamento_id=departamento.id)
