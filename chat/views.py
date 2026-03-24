@@ -5,6 +5,7 @@ from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from avisos.forms import AvisoDirectivaForm
@@ -14,6 +15,7 @@ from chat.models import DepartamentoLectura, Mensaje, MensajeEliminadoUsuario
 from chat.services import (
     crear_aviso_y_mensaje,
     emitir_actualizacion_aviso,
+    emitir_actualizacion_visto,
     emitir_eliminacion_aviso,
     emitir_mensaje_departamento,
     serializar_aviso,
@@ -266,6 +268,25 @@ def _obtener_estado_paneles(usuario, departamento):
 
 def _marcar_chat_como_leido(usuario, departamento):
     filtro_directiva = _filtro_conversacion(usuario, departamento)
+    directiva = _resolver_directiva_destino(usuario, departamento)
+    mensajes_por_ver = list(
+        Mensaje.objects.filter(departamento=departamento, es_sistema=False, visto_en__isnull=True)
+        .filter(filtro_directiva)
+        .exclude(eliminaciones__usuario=usuario)
+        .exclude(usuario=usuario)
+        .values_list("id", flat=True)
+    )
+    if mensajes_por_ver:
+        momento_visto = timezone.now()
+        Mensaje.objects.filter(id__in=mensajes_por_ver).update(visto_en=momento_visto)
+        emitir_actualizacion_visto(
+            departamento_id=departamento.id,
+            message_ids=mensajes_por_ver,
+            visto_en=momento_visto,
+            directiva_id=directiva.id if directiva else None,
+            viewer_id=usuario.id,
+        )
+
     ultimo_id_ajeno = (
         Mensaje.objects.filter(departamento=departamento, es_sistema=False)
         .filter(filtro_directiva)
@@ -347,7 +368,7 @@ def sala_chat(request, departamento_id):
         Mensaje.objects.filter(departamento=departamento_actual, es_sistema=False)
         .filter(filtro_directiva)
         .exclude(eliminaciones__usuario=request.user)
-        .select_related("usuario", "departamento")
+        .select_related("usuario", "departamento", "responde_a", "responde_a__usuario", "responde_a__usuario__departamento")
         .order_by("fecha")
     )
     avisos = Aviso.objects.filter(
@@ -468,7 +489,7 @@ def obtener_actualizaciones(request, departamento_id):
         Mensaje.objects.filter(departamento=departamento, es_sistema=False, id__gt=last_message_id)
         .filter(filtro_directiva)
         .exclude(eliminaciones__usuario=request.user)
-        .select_related("usuario", "departamento")
+        .select_related("usuario", "departamento", "responde_a", "responde_a__usuario", "responde_a__usuario__departamento")
         .order_by("id")
     )
     avisos = (
@@ -529,15 +550,23 @@ def subir_archivo(request, departamento_id):
         departamento,
         directiva_id=request.POST.get("directiva_id"),
     )
+    responde_a = None
+    responde_a_id = request.POST.get("responde_a_id")
+    if responde_a_id:
+        responde_a = _obtener_mensaje_visible(request.user, responde_a_id)
+        if responde_a.departamento_id != departamento.id or responde_a.directiva_id != (directiva.id if directiva else None):
+            return JsonResponse({"ok": False, "error": "No puedes responder a ese mensaje."}, status=400)
+
     mensaje = Mensaje.objects.create(
         usuario=request.user,
         departamento=departamento,
         directiva=directiva,
         archivo=form.cleaned_data["archivo"],
         contenido=request.POST.get("contenido", "").strip(),
+        responde_a=responde_a,
     )
     emitir_mensaje_departamento(mensaje)
-    return JsonResponse({"ok": True})
+    return JsonResponse({"ok": True, "message": serializar_mensaje(mensaje)})
 
 
 @login_required
@@ -555,6 +584,12 @@ def enviar_mensaje(request, departamento_id):
         departamento,
         directiva_id=request.POST.get("directiva_id"),
     )
+    responde_a = None
+    responde_a_id = request.POST.get("responde_a_id")
+    if responde_a_id:
+        responde_a = _obtener_mensaje_visible(request.user, responde_a_id)
+        if responde_a.departamento_id != departamento.id or responde_a.directiva_id != (directiva.id if directiva else None):
+            return JsonResponse({"ok": False, "error": "No puedes responder a ese mensaje."}, status=400)
 
     mensaje = Mensaje.objects.create(
         usuario=request.user,
@@ -562,6 +597,7 @@ def enviar_mensaje(request, departamento_id):
         directiva=directiva,
         contenido=contenido,
         archivo=archivo,
+        responde_a=responde_a,
     )
     emitir_mensaje_departamento(mensaje)
     return JsonResponse({"ok": True, "message": serializar_mensaje(mensaje)})

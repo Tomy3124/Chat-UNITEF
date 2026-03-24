@@ -39,6 +39,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const headerChatMenu = document.getElementById("headerChatMenu");
     const selectionToolbar = document.getElementById("waSelectionToolbar");
     const selectionCount = document.getElementById("waSelectionCount");
+    const replyComposer = document.getElementById("replyComposer");
+    const replyToInput = document.getElementById("replyToInput");
+    const replyComposerAuthor = document.getElementById("replyComposerAuthor");
+    const replyComposerText = document.getElementById("replyComposerText");
+    const clearReplyButton = document.querySelector("[data-clear-reply]");
+    const headerSubtitle = document.getElementById("chatHeaderSubtitle");
 
     const chatSearch = document.getElementById("chatSearch");
     const filterButtons = document.querySelectorAll("[data-chat-filter]");
@@ -66,6 +72,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedMessages = new Set();
     const panelReadRequests = new Set();
     let activeAttachmentSource = "file";
+    let replyTarget = null;
+    let typingStateActive = false;
+    let typingIdleTimer = null;
+    const typingResetTimers = new Map();
+    let swipeState = null;
+    let lastDesktopReplyGesture = { messageId: "", at: 0 };
 
     const getCsrfToken = () => {
         if (window.chatConfig?.csrfToken) {
@@ -103,6 +115,274 @@ document.addEventListener("DOMContentLoaded", () => {
             .replaceAll(">", "&gt;")
             .replaceAll('"', "&quot;")
             .replaceAll("'", "&#039;");
+
+    const getMessagePreviewBody = (message) => {
+        const body = (message?.contenido || "").trim();
+        if (body) {
+            return body;
+        }
+        return (message?.archivo_nombre || "").trim() || "Archivo adjunto";
+    };
+
+    const buildReplySnippetHtml = (reply) => {
+        if (!reply?.id) {
+            return "";
+        }
+
+        return `
+            <button type="button" class="wa-reply-chip" data-scroll-to-message="${reply.id}">
+                <span>${escapeHtml(reply.usuario || "Mensaje")}</span>
+                <strong>${escapeHtml(getMessagePreviewBody(reply))}</strong>
+            </button>
+        `;
+    };
+
+    const buildMessageStatusHtml = (message, isMine) => {
+        const timeHtml = `<time>${escapeHtml(message.fecha || "--:--")}</time>`;
+        return `<div class="wa-bubble-meta wa-bubble-meta--footer">${timeHtml}</div>`;
+    };
+
+    const rememberConversationPreview = (item, previewHtml, timeText, lastMessage) => {
+        if (!item) {
+            return;
+        }
+        item.dataset.previewHtml = previewHtml;
+        item.dataset.previewTime = timeText;
+        item.dataset.lastMessage = lastMessage;
+    };
+
+    const setChatItemTypingState = (item, active) => {
+        if (!item) {
+            return;
+        }
+
+        const previewNode = item.querySelector(".wa-chat-meta p");
+        const timeNode = item.querySelector(".wa-chat-head time");
+        if (!previewNode || !timeNode) {
+            return;
+        }
+
+        if (!item.dataset.previewHtml) {
+            rememberConversationPreview(
+                item,
+                previewNode.innerHTML,
+                timeNode.textContent,
+                item.dataset.lastMessage || previewNode.textContent.trim().toLowerCase(),
+            );
+        }
+
+        item.dataset.typing = active ? "1" : "0";
+        if (active) {
+            previewNode.textContent = "escribiendo...";
+            previewNode.classList.add("is-typing");
+            return;
+        }
+
+        previewNode.innerHTML = item.dataset.previewHtml || "";
+        previewNode.classList.remove("is-typing");
+        if (item.dataset.previewTime) {
+            timeNode.textContent = item.dataset.previewTime;
+        }
+    };
+
+    const setHeaderTypingState = (active) => {
+        if (!headerSubtitle) {
+            return;
+        }
+
+        if (active) {
+            headerSubtitle.textContent = "escribiendo...";
+            headerSubtitle.classList.add("is-typing");
+            return;
+        }
+
+        headerSubtitle.textContent = headerSubtitle.dataset.defaultSubtitle || "";
+        headerSubtitle.classList.remove("is-typing");
+    };
+
+    const getTypingBubble = () => messagesPanel?.querySelector("[data-typing-indicator='1']");
+
+    const removeTypingBubble = () => {
+        getTypingBubble()?.remove();
+    };
+
+    const showTypingBubble = (payload) => {
+        if (!messagesPanel || Number(payload?.departamento_id || 0) !== getActiveDepartmentId()) {
+            return;
+        }
+
+        const authorName = (payload?.usuario || payload?.autor_tipo_label || "Contacto").trim();
+        let indicator = getTypingBubble();
+        if (!indicator) {
+            indicator = document.createElement("article");
+            indicator.className = "wa-bubble theirs wa-bubble--typing";
+            indicator.dataset.typingIndicator = "1";
+            indicator.innerHTML = `
+                <div class="wa-typing-indicator" aria-live="polite" aria-label="${escapeHtml(authorName)} esta escribiendo">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            messagesPanel.appendChild(indicator);
+        } else {
+            indicator.querySelector(".wa-typing-indicator")?.setAttribute("aria-label", `${authorName} esta escribiendo`);
+        }
+
+        scrollToBottom();
+    };
+
+    const clearTypingForDepartment = (departmentId) => {
+        if (!departmentId) {
+            return;
+        }
+
+        const existingTimer = typingResetTimers.get(departmentId);
+        if (existingTimer) {
+            window.clearTimeout(existingTimer);
+            typingResetTimers.delete(departmentId);
+        }
+
+        setChatItemTypingState(document.querySelector(`.wa-chat-item[data-departamento-id="${departmentId}"]`), false);
+        if (departmentId === getActiveDepartmentId()) {
+            setHeaderTypingState(false);
+            removeTypingBubble();
+        }
+    };
+
+    const scheduleTypingReset = (departmentId) => {
+        if (!departmentId) {
+            return;
+        }
+
+        const existingTimer = typingResetTimers.get(departmentId);
+        if (existingTimer) {
+            window.clearTimeout(existingTimer);
+        }
+
+        typingResetTimers.set(
+            departmentId,
+            window.setTimeout(() => {
+                typingResetTimers.delete(departmentId);
+                clearTypingForDepartment(departmentId);
+            }, 2400),
+        );
+    };
+
+    const applyTypingPayload = (payload) => {
+        const departmentId = Number(payload?.departamento_id || 0);
+        const userId = Number(payload?.user_id || 0);
+        if (!departmentId || userId === currentViewerId) {
+            return;
+        }
+
+        if (payload.typing) {
+            setChatItemTypingState(document.querySelector(`.wa-chat-item[data-departamento-id="${departmentId}"]`), true);
+            if (departmentId === getActiveDepartmentId()) {
+                setHeaderTypingState(true);
+                showTypingBubble(payload);
+            }
+            scheduleTypingReset(departmentId);
+            return;
+        }
+
+        clearTypingForDepartment(departmentId);
+    };
+
+    const applyReadReceipt = () => {};
+
+    const clearReplyTarget = () => {
+        replyTarget = null;
+        if (replyToInput) {
+            replyToInput.value = "";
+        }
+        if (replyComposer) {
+            replyComposer.hidden = true;
+            replyComposer.classList.remove("is-mine", "is-theirs");
+        }
+        document.querySelectorAll(".wa-bubble.is-reply-source").forEach((node) => node.classList.remove("is-reply-source"));
+    };
+
+    const setReplyTarget = (reply) => {
+        if (!reply?.id) {
+            clearReplyTarget();
+            return;
+        }
+
+        replyTarget = reply;
+        if (replyToInput) {
+            replyToInput.value = String(reply.id);
+        }
+        if (replyComposerAuthor) {
+            replyComposerAuthor.textContent = reply.usuario || "Mensaje";
+        }
+        if (replyComposerText) {
+            replyComposerText.textContent = getMessagePreviewBody(reply);
+        }
+        if (replyComposer) {
+            replyComposer.hidden = false;
+            replyComposer.classList.toggle("is-mine", Boolean(reply.isMine));
+            replyComposer.classList.toggle("is-theirs", !reply.isMine);
+        }
+        document.querySelectorAll(".wa-bubble.is-reply-source").forEach((node) => node.classList.remove("is-reply-source"));
+        document.querySelector(`.wa-bubble[data-message-id="${reply.id}"]`)?.classList.add("is-reply-source");
+    };
+
+    const getBubbleReplySource = (bubble) => ({
+        id: Number(bubble?.dataset.messageId || 0),
+        isMine: bubble?.dataset.isMine === "1",
+        usuario: bubble?.querySelector("header strong")?.textContent?.trim() || "Mensaje",
+        contenido:
+            bubble?.querySelector("p")?.textContent?.trim() ||
+            bubble?.querySelector(".wa-file-name")?.textContent?.replace(/^📄\s*/, "")?.trim() ||
+            "Archivo adjunto",
+    });
+
+    const beginReplyFromBubble = (bubble) => {
+        if (!bubble) {
+            return;
+        }
+
+        setReplyTarget(getBubbleReplySource(bubble));
+        closeMessageMenu();
+        messageInput?.focus();
+    };
+
+    const scrollToMessageById = (messageId) => {
+        const target = document.querySelector(`.wa-bubble[data-message-id="${messageId}"]`);
+        if (!target) {
+            return;
+        }
+
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.classList.remove("is-reply-highlight");
+        void target.offsetWidth;
+        target.classList.add("is-reply-highlight");
+        window.setTimeout(() => target.classList.remove("is-reply-highlight"), 1300);
+    };
+
+    const emitTypingState = (active) => {
+        if (!window.chatConfig?.socketPath || !roomSocket || roomSocket.readyState !== WebSocket.OPEN) {
+            return;
+        }
+        if (typingStateActive === active) {
+            return;
+        }
+
+        roomSocket.send(JSON.stringify({ action: "typing", active }));
+        typingStateActive = active;
+    };
+
+    const scheduleTypingIdleReset = () => {
+        if (typingIdleTimer) {
+            window.clearTimeout(typingIdleTimer);
+        }
+
+        typingIdleTimer = window.setTimeout(() => {
+            typingIdleTimer = null;
+            emitTypingState(false);
+        }, 1200);
+    };
 
     const browserNotificationsSupported = typeof window !== "undefined" && "Notification" in window;
     const serviceWorkerSupported = typeof navigator !== "undefined" && "serviceWorker" in navigator;
@@ -618,17 +898,19 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             const label = payload.tipo === "asignacion" ? "[ASIGNACION]" : "[AVISO]";
             const body = `${payload.titulo}: ${payload.contenido}`.trim();
-            previewNode.innerHTML = `<span class="wa-last-author">${label}:</span> ${escapeHtml(body)}`;
+            const previewHtml = `<span class="wa-last-author">${label}:</span> ${escapeHtml(body)}`;
+            previewNode.innerHTML = previewHtml;
             timeNode.textContent = "Ahora";
-            item.dataset.lastMessage = body.toLowerCase();
+            rememberConversationPreview(item, previewHtml, "Ahora", body.toLowerCase());
             return;
         }
 
         const body = (payload.contenido || "").trim() || (payload.archivo_nombre ? "Archivo adjunto" : "Mensaje");
         const author = payload.autor_tipo_label || "Contacto";
-        previewNode.innerHTML = `<span class="wa-last-author">${escapeHtml(author)}:</span> ${escapeHtml(body)}`;
+        const previewHtml = `<span class="wa-last-author">${escapeHtml(author)}:</span> ${escapeHtml(body)}`;
+        previewNode.innerHTML = previewHtml;
         timeNode.textContent = payload.fecha || "--:--";
-        item.dataset.lastMessage = body.toLowerCase();
+        rememberConversationPreview(item, previewHtml, payload.fecha || "--:--", body.toLowerCase());
     };
 
     const moveConversationItemToTop = (item, payload) => {
@@ -734,6 +1016,19 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     runChatFilters();
+    chatItems.forEach((item) => {
+        const previewNode = item.querySelector(".wa-chat-meta p");
+        const timeNode = item.querySelector(".wa-chat-head time");
+        if (!previewNode || !timeNode) {
+            return;
+        }
+        rememberConversationPreview(
+            item,
+            previewNode.innerHTML,
+            timeNode.textContent,
+            item.dataset.lastMessage || previewNode.textContent.trim().toLowerCase(),
+        );
+    });
     if (activeChatItem) {
         updateUnreadBubble(activeChatItem, { reset: true });
         runChatFilters();
@@ -834,6 +1129,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (viewerDirectivaId && payload.directiva_id && Number(payload.directiva_id) !== viewerDirectivaId) {
                     return;
                 }
+                if (payload.kind === "typing") {
+                    applyTypingPayload(payload);
+                    return;
+                }
+                if (payload.kind === "read_receipt") {
+                    applyReadReceipt(payload);
+                    return;
+                }
+                clearTypingForDepartment(departamentoId);
                 updateConversationPreviewForItem(item, payload);
                 moveConversationItemToTop(item, payload);
                 if (shouldIncrementUnreadForPayload(payload)) {
@@ -1128,6 +1432,11 @@ document.addEventListener("DOMContentLoaded", () => {
         window.open(saveLink.href, "_blank", "noopener");
     };
 
+    clearReplyButton?.addEventListener("click", () => {
+        clearReplyTarget();
+        messageInput?.focus();
+    });
+
     const runMediaActionMenu = (bubble) => {
         const mediaTrigger = bubble.querySelector("[data-media-action]");
         if (!(mediaTrigger instanceof HTMLElement)) {
@@ -1198,6 +1507,12 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             const action = target.dataset.menuAction;
             const isMine = selectedBubble.dataset.isMine === "1";
+
+            if (action === "reply") {
+                beginReplyFromBubble(selectedBubble);
+                closeMessageMenu();
+                return;
+            }
 
             if (action === "edit" && isMine) {
                 runBubbleEdit(selectedBubble);
@@ -1566,9 +1881,10 @@ document.addEventListener("DOMContentLoaded", () => {
         const author = message.kind === "notice"
             ? (message.tipo === "asignacion" ? "[ASIGNACION]" : "[AVISO]")
             : (message.autor_tipo_label || "Contacto");
-        previewNode.innerHTML = `<span class="wa-last-author">${escapeHtml(author)}:</span> ${escapeHtml(body)}`;
+        const previewHtml = `<span class="wa-last-author">${escapeHtml(author)}:</span> ${escapeHtml(body)}`;
+        previewNode.innerHTML = previewHtml;
         timeNode.textContent = message.fecha || "--:--";
-        activeItem.dataset.lastMessage = body.toLowerCase();
+        rememberConversationPreview(activeItem, previewHtml, message.fecha || "--:--", body.toLowerCase());
     };
 
     const renderMessage = (message) => {
@@ -1592,37 +1908,30 @@ document.addEventListener("DOMContentLoaded", () => {
             article.dataset.messageId = String(message.id);
             renderedIds.add(Number(message.id));
         }
+        article.dataset.isMine = isMine ? "1" : "0";
+        article.dataset.editUrl = window.chatConfig.forwardTemplateUrl.replace("0/reenviar/", `${message.id}/editar/`);
+        article.dataset.deleteUrl = window.chatConfig.forwardTemplateUrl.replace("0/reenviar/", `${message.id}/eliminar/`);
+        article.dataset.forwardUrl = window.chatConfig.forwardTemplateUrl.replace("0", String(message.id));
 
         let html = `
             <header>
                 <strong>${escapeHtml(message.usuario)}</strong>
-                <time>${escapeHtml(message.fecha)}</time>
             </header>
         `;
+
+        html += buildReplySnippetHtml(message.responde_a);
 
         if (message.contenido) {
             html += `<p>${escapeHtml(message.contenido)}</p>`;
         }
 
         html += buildFileAttachmentHtml(message);
-
-        html += `
-            <div class="wa-bubble-data"
-                data-is-mine="${isMine ? "1" : "0"}"
-                data-edit-url="${window.chatConfig.forwardTemplateUrl.replace("0/reenviar/", `${message.id}/editar/`)}"
-                data-delete-url="${window.chatConfig.forwardTemplateUrl.replace("0/reenviar/", `${message.id}/eliminar/`)}"
-                data-forward-url="${window.chatConfig.forwardTemplateUrl.replace("0", String(message.id))}"></div>
-        `;
+        html += buildMessageStatusHtml(message, isMine);
 
         article.innerHTML = html;
-        const bubbleData = article.querySelector(".wa-bubble-data");
-        article.dataset.isMine = bubbleData?.dataset.isMine || "0";
-        article.dataset.editUrl = bubbleData?.dataset.editUrl || "";
-        article.dataset.deleteUrl = bubbleData?.dataset.deleteUrl || "";
-        article.dataset.forwardUrl = bubbleData?.dataset.forwardUrl || "";
-        bubbleData?.remove();
         messagesPanel.querySelector(".wa-empty-placeholder")?.remove();
         messagesPanel.appendChild(article);
+        clearTypingForDepartment(Number(message.departamento_id || getActiveDepartmentId()));
         updateActiveConversationPreview(message);
         const activeItem = document.querySelector(".wa-chat-item.is-active");
         if (activeItem) {
@@ -1639,6 +1948,14 @@ document.addEventListener("DOMContentLoaded", () => {
         const payload = JSON.parse(event.data);
         const viewerDirectivaId = Number(window.chatConfig?.directivaId || 0);
         if (viewerDirectivaId && payload.directiva_id && Number(payload.directiva_id) !== viewerDirectivaId) {
+            return;
+        }
+        if (payload.kind === "typing") {
+            applyTypingPayload(payload);
+            return;
+        }
+        if (payload.kind === "read_receipt") {
+            applyReadReceipt(payload);
             return;
         }
         notifyIncomingPayload(payload, activeChatItem);
@@ -1663,6 +1980,10 @@ document.addEventListener("DOMContentLoaded", () => {
             }
             scrollToBottom();
             scheduleCurrentChatReadSync(0);
+            if (messageInput?.value.trim()) {
+                emitTypingState(true);
+                scheduleTypingIdleReset();
+            }
         };
         roomSocket.onclose = () => {
             if (roomSocketReconnectTimer) {
@@ -1741,6 +2062,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!(target instanceof HTMLElement)) {
             return;
         }
+        const replyTrigger = target.closest("[data-scroll-to-message]");
+        if (replyTrigger instanceof HTMLElement) {
+            scrollToMessageById(Number(replyTrigger.dataset.scrollToMessage || 0));
+            return;
+        }
         if (target.closest("a")) {
             return;
         }
@@ -1767,6 +2093,99 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         openMessageMenu(bubble, event);
+    });
+
+    messagesPanel.addEventListener("contextmenu", (event) => {
+        if (!isDesktopViewport()) {
+            return;
+        }
+
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+
+        const bubble = target.closest(".wa-bubble[data-message-id]");
+        if (!bubble) {
+            return;
+        }
+
+        event.preventDefault();
+        const messageId = bubble.dataset.messageId || "";
+        const now = Date.now();
+        if (lastDesktopReplyGesture.messageId === messageId && now - lastDesktopReplyGesture.at < 450) {
+            lastDesktopReplyGesture = { messageId: "", at: 0 };
+            beginReplyFromBubble(bubble);
+            return;
+        }
+
+        lastDesktopReplyGesture = { messageId, at: now };
+    });
+
+    messagesPanel.addEventListener("pointerdown", (event) => {
+        if (isDesktopViewport() || event.pointerType === "mouse" || messageSelectionMode) {
+            return;
+        }
+
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+
+        const bubble = target.closest(".wa-bubble[data-message-id]");
+        if (!bubble) {
+            return;
+        }
+
+        swipeState = {
+            bubble,
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            deltaX: 0,
+            dragging: false,
+        };
+    });
+
+    messagesPanel.addEventListener("pointermove", (event) => {
+        if (!swipeState || swipeState.pointerId !== event.pointerId) {
+            return;
+        }
+
+        const deltaX = Math.max(0, event.clientX - swipeState.startX);
+        const deltaY = Math.abs(event.clientY - swipeState.startY);
+        if (deltaY > 34 && deltaY > deltaX) {
+            swipeState = null;
+            return;
+        }
+
+        swipeState.deltaX = Math.min(deltaX, 82);
+        swipeState.dragging = swipeState.deltaX > 16;
+        swipeState.bubble.classList.add("is-reply-dragging");
+        swipeState.bubble.style.transform = `translateX(${swipeState.deltaX}px)`;
+        swipeState.bubble.classList.toggle("is-reply-ready", swipeState.deltaX >= 58);
+    });
+
+    const finishSwipeReply = (pointerId) => {
+        if (!swipeState || swipeState.pointerId !== pointerId) {
+            return;
+        }
+
+        const { bubble, deltaX } = swipeState;
+        bubble.style.transform = "";
+        bubble.classList.remove("is-reply-dragging", "is-reply-ready");
+        if (deltaX >= 58) {
+            beginReplyFromBubble(bubble);
+        }
+        swipeState = null;
+    };
+
+    messagesPanel.addEventListener("pointerup", (event) => {
+        finishSwipeReply(event.pointerId);
+    });
+
+    messagesPanel.addEventListener("pointercancel", (event) => {
+        finishSwipeReply(event.pointerId);
     });
 
     if (attachToggle && attachMenu) {
@@ -1831,9 +2250,14 @@ document.addEventListener("DOMContentLoaded", () => {
         messageInput?.addEventListener("focus", () => {
             setKeyboardOpenState(true);
             applyViewportHeight();
+            if (messageInput.value.trim()) {
+                emitTypingState(true);
+                scheduleTypingIdleReset();
+            }
         });
 
         messageInput?.addEventListener("blur", () => {
+            emitTypingState(false);
             window.setTimeout(() => {
                 setKeyboardOpenState(false);
                 applyViewportHeight();
@@ -1842,6 +2266,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
         messageInput?.addEventListener("input", () => {
             autoresizeMessageInput();
+            if (messageInput.value.trim()) {
+                emitTypingState(true);
+                scheduleTypingIdleReset();
+                return;
+            }
+
+            if (typingIdleTimer) {
+                window.clearTimeout(typingIdleTimer);
+                typingIdleTimer = null;
+            }
+            emitTypingState(false);
         });
 
         messageInput?.addEventListener("keydown", (event) => {
@@ -1869,9 +2304,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (window.chatConfig.directivaId) {
                 formData.append("directiva_id", window.chatConfig.directivaId);
             }
+            if (replyTarget?.id) {
+                formData.append("responde_a_id", String(replyTarget.id));
+            }
             if (hasFile && activeFileInput) {
                 formData.append("archivo", activeFileInput.files[0]);
             }
+
+            emitTypingState(false);
 
             const response = await fetch(window.chatConfig.sendUrl, {
                 method: "POST",
@@ -1897,6 +2337,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     input.value = "";
                 }
             });
+            clearReplyTarget();
             activeAttachmentSource = "file";
             updateAttachInfo();
             attachMenu?.classList.remove("is-open");
@@ -1914,6 +2355,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 sidePanel.dataset.activePanel = "";
             }
             attachMenu?.classList.remove("is-open");
+            clearReplyTarget();
             closeMessageMenu();
             closeWaModal();
         }
@@ -1929,6 +2371,11 @@ document.addEventListener("DOMContentLoaded", () => {
         if (chatReadSyncTimer) {
             window.clearTimeout(chatReadSyncTimer);
         }
+        if (typingIdleTimer) {
+            window.clearTimeout(typingIdleTimer);
+        }
+        emitTypingState(false);
+        typingResetTimers.forEach((timer) => window.clearTimeout(timer));
         roomSocket?.close();
     });
 

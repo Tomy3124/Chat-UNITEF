@@ -1918,9 +1918,9 @@ body {
 
 .wa-bubble {
     max-width: min(78%, 720px);
-    padding: 0.72rem 0.82rem;
-    border-radius: 14px;
-    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+    padding: 0.42rem 0.58rem 1.14rem;
+    border-radius: 8px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.16);
     position: relative;
     align-self: flex-start;
     border: 1px solid rgba(70, 96, 112, 0.28);
@@ -1929,27 +1929,139 @@ body {
 .wa-bubble header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.8rem;
-    margin-bottom: 0.35rem;
+    justify-content: flex-start;
+    gap: 0.45rem;
+    margin-bottom: 0.18rem;
+}
+
+.wa-bubble-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.18rem;
+    flex: 0 0 auto;
+}
+
+.wa-bubble-meta--footer {
+    position: absolute;
+    right: 0.46rem;
+    bottom: 0.28rem;
+    justify-content: flex-end;
+    width: auto;
+    margin-top: 0;
+    padding-right: 0;
+    line-height: 1;
 }
 
 .wa-bubble strong {
-    font-size: 0.82rem;
+    font-size: 0.77rem;
+    font-weight: 600;
     color: #f5fbff;
 }
 
+.wa-reply-chip {
+    width: 100%;
+    border: 0;
+    padding: 0.46rem 0.58rem;
+    margin: 0 0 0.28rem;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.07);
+    border-left: 4px solid #25d366;
+    display: block;
+    text-align: left;
+    color: #d8e6ee;
+    cursor: pointer;
+}
+
+.wa-reply-chip span,
+.wa-reply-composer__body span {
+    display: block;
+    font-size: 0.68rem;
+    font-weight: 600;
+    color: #25d366;
+    margin-bottom: 0.08rem;
+}
+
+.wa-reply-chip strong,
+.wa-reply-composer__body strong {
+    display: block;
+    font-size: 0.72rem;
+    line-height: 1.28;
+    color: #dfe9ee;
+}
+
+.wa-bubble.is-reply-source {
+    box-shadow: 0 0 0 2px rgba(37, 211, 102, 0.26), 0 8px 22px rgba(0, 0, 0, 0.16);
+}
+
+.wa-bubble.is-reply-dragging {
+    transition: none;
+}
+
+.wa-bubble.is-reply-ready {
+    box-shadow: 0 0 0 2px rgba(83, 189, 235, 0.28), 0 10px 24px rgba(0, 0, 0, 0.2);
+}
+
+.wa-bubble.is-reply-highlight {
+    animation: replyPulse 1.2s ease;
+}
+
+.wa-bubble time {
+    font-size: 0.67rem;
+    letter-spacing: 0;
+    color: #8fa1ab;
+}
+
 .wa-bubble.theirs {
-    background: linear-gradient(180deg, #24323b, #202c33);
+    background: #202c33;
     border-top-left-radius: 4px;
+    border-color: rgba(58, 74, 84, 0.62);
 }
 
 .wa-bubble.mine {
     margin-left: auto;
     align-self: flex-end;
-    background: linear-gradient(135deg, rgba(37, 211, 102, 0.32), rgba(33, 150, 243, 0.22));
+    background: #005c4b;
     border-top-right-radius: 4px;
-    border-color: rgba(63, 169, 115, 0.28);
+    border-color: rgba(0, 92, 75, 0.92);
+}
+
+.wa-bubble--typing {
+    max-width: 64px;
+    min-width: 56px;
+    padding: 0.42rem 0.58rem 0.48rem;
+}
+
+.wa-bubble--typing::after {
+    left: -5px;
+    right: auto;
+    clip-path: polygon(100% 0, 0 0, 100% 100%);
+    border-left: inherit;
+    border-right: 0;
+}
+
+.wa-typing-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.22rem;
+    min-height: 18px;
+}
+
+.wa-typing-indicator span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #aab9c3;
+    opacity: 0.38;
+    animation: waTypingDot 1.1s infinite ease-in-out;
+}
+
+.wa-typing-indicator span:nth-child(2) {
+    animation-delay: 0.16s;
+}
+
+.wa-typing-indicator span:nth-child(3) {
+    animation-delay: 0.32s;
 }
 
 .wa-bubble.theirs::after,
@@ -2217,6 +2329,12 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.wa-chat-meta p.is-typing,
+.wa-contact small.is-typing {
+    color: #25d366;
+    font-weight: 600;
 }
 
 .wa-last-author {
@@ -2498,13 +2616,16 @@ body {
 
 .wa-bubble time {
     flex: 0 0 auto;
-    font-size: 0.74rem;
 }
 
 .wa-bubble p {
     margin: 0;
-    line-height: 1.5;
-    color: #edf2f5;
+    padding-right: 3.15rem;
+    line-height: 1.4;
+    font-size: 0.91rem;
+    color: #e9edef;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 .wa-bubble a {
@@ -2517,9 +2638,9 @@ body {
 .wa-file-card {
     display: grid;
     gap: 0.55rem;
-    margin-top: 0.55rem;
-    padding: 0.72rem 0.82rem;
-    border-radius: 14px;
+    margin-top: 0.42rem;
+    padding: 0.56rem 0.58rem;
+    border-radius: 10px;
     background: rgba(8, 20, 27, 0.24);
     border: 1px solid rgba(120, 153, 171, 0.2);
 }
@@ -2608,6 +2729,93 @@ body {
     min-width: 0;
     overflow: visible;
     transition: padding 160ms ease, background 160ms ease;
+}
+
+.wa-reply-composer {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.62rem;
+    margin: 0 0 0.42rem;
+    padding: 0.62rem 0.82rem;
+    border-radius: 14px;
+    background: #1f2224;
+    border: 1px solid #2c3134;
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+.wa-reply-composer__accent {
+    width: 3px;
+    align-self: stretch;
+    min-height: 38px;
+    border-radius: 999px;
+    background: #25d366;
+    flex: 0 0 3px;
+}
+
+.wa-reply-composer.is-theirs .wa-reply-composer__accent {
+    background: #53bdeb;
+}
+
+.wa-reply-composer.is-mine .wa-reply-composer__accent {
+    background: #25d366;
+}
+
+.wa-reply-composer__body {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.wa-reply-composer__body span {
+    font-size: 0.8rem;
+    font-weight: 700;
+    margin-bottom: 0.16rem;
+}
+
+.wa-reply-composer.is-theirs .wa-reply-composer__body span {
+    color: #53bdeb;
+}
+
+.wa-reply-composer.is-mine .wa-reply-composer__body span {
+    color: #25d366;
+}
+
+.wa-reply-composer__body strong {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #f3f5f6;
+    font-size: 0.97rem;
+    font-weight: 400;
+}
+
+.wa-reply-composer__close {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 0;
+    background: transparent;
+    color: #f1f4f5;
+    display: grid;
+    place-items: center;
+    font-size: 1.5rem;
+    line-height: 1;
+    padding: 0;
+    opacity: 0.9;
+}
+
+@keyframes waTypingDot {
+    0%,
+    60%,
+    100% {
+        transform: translateY(0) scale(0.82);
+        opacity: 0.32;
+    }
+
+    30% {
+        transform: translateY(-1.6px) scale(1);
+        opacity: 1;
+    }
 }
 
 .wa-send,
@@ -3199,13 +3407,40 @@ body.theme-light .wa-unread-pill {
 }
 
 body.theme-light .wa-bubble.theirs {
-    background: linear-gradient(180deg, #ffffff, #f8fbfd);
+    background: #ffffff;
     border: 1px solid #d8e4ea;
 }
 
 body.theme-light .wa-bubble.mine {
-    background: linear-gradient(135deg, rgba(37, 211, 102, 0.22), rgba(51, 135, 255, 0.16));
-    border: 1px solid #cbe9d9;
+    background: #d9fdd3;
+    border: 1px solid #cfe8ca;
+}
+
+body.theme-light .wa-typing-indicator span {
+    background: #8197a5;
+}
+
+body.theme-light .wa-reply-chip {
+    background: rgba(47, 111, 158, 0.08);
+    color: #2e4658;
+}
+
+body.theme-light .wa-reply-chip strong,
+body.theme-light .wa-reply-composer__body strong {
+    color: #2e4658;
+}
+
+body.theme-light .wa-reply-composer {
+    background: #f4f7f8;
+    border-color: #d5e1e7;
+}
+
+body.theme-light .wa-reply-composer__close {
+    color: #2e4658;
+}
+
+body.theme-light .wa-reply-composer__body strong {
+    color: #243844;
 }
 
 body.theme-light .wa-bubble p,
@@ -3585,7 +3820,23 @@ body:not(.theme-light) .login-pulse-bar span {
     .wa-bubble {
         max-width: min(88%, 320px);
         font-size: 0.92rem;
-        padding: 0.66rem 0.74rem;
+        padding: 0.4rem 0.54rem 1.04rem;
+    }
+
+    .wa-bubble--typing {
+        max-width: 58px;
+        min-width: 52px;
+        padding: 0.36rem 0.5rem 0.42rem;
+    }
+
+    .wa-typing-indicator {
+        gap: 0.18rem;
+        min-height: 16px;
+    }
+
+    .wa-typing-indicator span {
+        width: 4px;
+        height: 4px;
     }
 
     .wa-bubble header {
@@ -3597,7 +3848,34 @@ body:not(.theme-light) .login-pulse-bar span {
     }
 
     .wa-bubble time {
-        font-size: 0.68rem;
+        font-size: 0.64rem;
+    }
+
+    .wa-bubble-meta--footer {
+        right: 0.4rem;
+        bottom: 0.24rem;
+    }
+
+    .wa-reply-chip {
+        padding: 0.52rem 0.62rem;
+    }
+
+    .wa-reply-composer {
+        margin-bottom: 0.36rem;
+        padding: 0.52rem 0.62rem;
+        gap: 0.52rem;
+    }
+
+    .wa-reply-composer__accent {
+        min-height: 34px;
+    }
+
+    .wa-reply-composer__body span {
+        font-size: 0.74rem;
+    }
+
+    .wa-reply-composer__body strong {
+        font-size: 0.9rem;
     }
 
     .wa-file-card {
@@ -3700,6 +3978,12 @@ body:not(.theme-light) .login-pulse-bar span {
         width: auto;
         padding-left: 0.1rem;
         white-space: normal;
+    }
+
+    .wa-reply-composer__close {
+        width: 24px;
+        height: 24px;
+        font-size: 1.35rem;
     }
 
     .wa-side-panel header {
@@ -4040,27 +4324,29 @@ body.theme-light .auth-shell--enhanced .stack-form--login .helptext {
 
 @media (max-width: 720px) {
     .auth-shell--enhanced {
-        padding: 0.45rem;
+        padding: 0.6rem;
+        place-items: center;
     }
 
     .auth-shell--enhanced .auth-card--futuristic {
-        grid-template-columns: 126px minmax(0, 1fr);
-        width: 100%;
+        grid-template-columns: 104px minmax(0, 1fr);
+        width: min(100%, 520px);
         min-height: auto;
+        border-radius: 24px;
     }
 
     .auth-shell--enhanced .auth-copy,
     .auth-shell--enhanced .auth-form {
         min-height: auto;
-        padding: 0.9rem;
+        padding: 0.82rem;
     }
 
     .auth-shell--enhanced .auth-copy {
         justify-content: center;
         align-items: center;
-        gap: 0.5rem;
+        gap: 0.38rem;
         text-align: center;
-        padding-inline: 0.7rem;
+        padding-inline: 0.55rem;
     }
 
     .auth-shell--enhanced .auth-copy::after,
@@ -4074,24 +4360,25 @@ body.theme-light .auth-shell--enhanced .stack-form--login .helptext {
         align-items: center;
         justify-content: center;
         text-align: center;
-        gap: 0.45rem;
+        gap: 0.34rem;
         margin-bottom: 0;
     }
 
     .auth-shell--enhanced .brand-badge--hero img {
-        width: 56px;
-        height: 56px;
-        padding: 0.3rem;
+        width: 44px;
+        height: 44px;
+        padding: 0.2rem;
     }
 
     .auth-shell--enhanced .brand-badge--hero .eyebrow {
-        font-size: 0.62rem;
-        line-height: 1.15;
+        max-width: 70px;
+        font-size: 0.43rem;
+        line-height: 1.08;
     }
 
     .auth-shell--enhanced .brand-badge--hero h1 {
-        font-size: 0.94rem;
-        line-height: 1.05;
+        font-size: 0.8rem;
+        line-height: 1.02;
         margin: 0;
     }
 
@@ -4105,56 +4392,98 @@ body.theme-light .auth-shell--enhanced .stack-form--login .helptext {
     }
 
     .auth-shell--enhanced .login-header--floating {
-        margin-bottom: 0.7rem;
+        margin-bottom: 0.58rem;
+    }
+
+    .auth-shell--enhanced .eyebrow.dark {
+        font-size: 0.66rem;
+        line-height: 1.15;
     }
 
     .auth-shell--enhanced .login-header--floating h2 {
-        font-size: 1.1rem;
+        font-size: 1.05rem;
+        line-height: 1.08;
     }
 
     .auth-shell--enhanced .stack-form--login p {
-        margin-bottom: 0.65rem;
+        margin-bottom: 0.55rem;
     }
 
     .auth-shell--enhanced .stack-form--login p label {
-        margin-bottom: 0.32rem;
-        font-size: 0.8rem;
+        margin-bottom: 0.26rem;
+        font-size: 0.7rem;
     }
 
     .auth-shell--enhanced .stack-form--login input,
     .auth-shell--enhanced .stack-form--login select {
-        min-height: 44px;
-        padding: 0.7rem 0.8rem;
-        font-size: 0.92rem;
+        min-height: 38px;
+        padding: 0.52rem 0.7rem;
+        font-size: 0.84rem;
+        border-radius: 14px;
     }
 
     .auth-shell--enhanced .login-submit {
-        min-height: 44px;
-        font-size: 0.92rem;
+        min-height: 38px;
+        font-size: 0.82rem;
+        border-radius: 14px;
     }
 }
 
 @media (max-width: 480px) {
+    .auth-shell--enhanced {
+        padding: 0.45rem 0.3rem;
+    }
+
     .auth-shell--enhanced .auth-card--futuristic {
-        grid-template-columns: 118px minmax(0, 1fr);
+        grid-template-columns: 88px minmax(0, 1fr);
+        width: min(100%, 360px);
+        border-radius: 20px;
     }
 
     .auth-shell--enhanced .auth-copy,
     .auth-shell--enhanced .auth-form {
-        padding: 0.72rem;
+        padding: 0.68rem;
     }
 
     .auth-shell--enhanced .brand-badge--hero {
-        gap: 0.38rem;
+        gap: 0.28rem;
     }
 
     .auth-shell--enhanced .brand-badge--hero h1 {
-        font-size: 0.88rem;
+        font-size: 0.72rem;
     }
 
     .auth-shell--enhanced .brand-badge--hero img {
-        width: 50px;
-        height: 50px;
+        width: 38px;
+        height: 38px;
+    }
+
+    .auth-shell--enhanced .brand-badge--hero .eyebrow {
+        max-width: 58px;
+        font-size: 0.38rem;
+    }
+
+    .auth-shell--enhanced .login-header--floating h2 {
+        font-size: 0.96rem;
+    }
+
+    .auth-shell--enhanced .eyebrow.dark {
+        font-size: 0.58rem;
+    }
+
+    .auth-shell--enhanced .stack-form--login p label {
+        font-size: 0.66rem;
+    }
+
+    .auth-shell--enhanced .stack-form--login input,
+    .auth-shell--enhanced .stack-form--login select,
+    .auth-shell--enhanced .login-submit {
+        min-height: 36px;
+        font-size: 0.78rem;
+    }
+
+    .auth-shell--enhanced .login-pulse-bar {
+        margin-top: 0.55rem;
     }
 
     .auth-shell--enhanced .brand-badge--hero .eyebrow {

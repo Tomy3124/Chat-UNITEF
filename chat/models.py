@@ -24,7 +24,15 @@ class Mensaje(models.Model):
     )
     contenido = models.TextField(blank=True)
     archivo = models.FileField(upload_to="chat/archivos/", blank=True, null=True)
+    responde_a = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        related_name="respuestas",
+        null=True,
+        blank=True,
+    )
     fecha = models.DateTimeField(auto_now_add=True)
+    visto_en = models.DateTimeField(null=True, blank=True)
     es_sistema = models.BooleanField(default=False)
 
     class Meta:

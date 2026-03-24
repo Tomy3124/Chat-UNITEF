@@ -79,7 +79,7 @@
                 <div class="wa-chat-avatar wa-chat-avatar--lg">{{ departamento_actual.nombre|slice:":1" }}</div>
                 <div>
                     <strong>{{ header_title }}</strong>
-                    <small>{{ header_subtitle }}</small>
+                    <small id="chatHeaderSubtitle" data-default-subtitle="{{ header_subtitle }}">{{ header_subtitle }}</small>
                 </div>
             </div>
             <div class="wa-header-actions">
@@ -104,8 +104,31 @@
                 data-forward-url="{% url 'chat:reenviar_mensaje' mensaje.id %}">
                 <header>
                     <strong>{% if mensaje.usuario and mensaje.usuario.es_directiva %}{{ mensaje.usuario.first_name|default:mensaje.usuario.username }}{% elif mensaje.usuario and mensaje.usuario.departamento %}{{ mensaje.usuario.departamento.nombre }}{% else %}{{ mensaje.usuario.username|default:'Sistema' }}{% endif %}</strong>
-                    <time>{{ mensaje.fecha|date:"h:i A" }}</time>
                 </header>
+                {% if mensaje.responde_a %}
+                <button type="button" class="wa-reply-chip" data-scroll-to-message="{{ mensaje.responde_a.id }}">
+                    <span>
+                        {% if mensaje.responde_a.usuario and mensaje.responde_a.usuario.es_directiva %}
+                            {{ mensaje.responde_a.usuario.first_name|default:mensaje.responde_a.usuario.username }}
+                        {% elif mensaje.responde_a.usuario and mensaje.responde_a.usuario.departamento %}
+                            {{ mensaje.responde_a.usuario.departamento.nombre }}
+                        {% elif mensaje.responde_a.usuario %}
+                            {{ mensaje.responde_a.usuario.username }}
+                        {% else %}
+                            Mensaje
+                        {% endif %}
+                    </span>
+                    <strong>
+                        {% if mensaje.responde_a.contenido %}
+                            {{ mensaje.responde_a.contenido|truncatechars:78 }}
+                        {% elif mensaje.responde_a.archivo %}
+                            {{ mensaje.responde_a.archivo.name|cut:"chat/archivos/"|truncatechars:78 }}
+                        {% else %}
+                            Archivo adjunto
+                        {% endif %}
+                    </strong>
+                </button>
+                {% endif %}
                 {% if mensaje.contenido %}
                 <p>{{ mensaje.contenido }}</p>
                 {% endif %}
@@ -150,6 +173,9 @@
                     </div>
                 </div>
                 {% endif %}
+                <div class="wa-bubble-meta wa-bubble-meta--footer">
+                    <time>{{ mensaje.fecha|date:"h:i A" }}</time>
+                </div>
             </article>
             {% empty %}
             <article class="wa-bubble theirs wa-empty-placeholder">
@@ -168,8 +194,17 @@
         </div>
 
         <footer class="wa-composer">
+            <div id="replyComposer" class="wa-reply-composer" hidden>
+                <div class="wa-reply-composer__accent" aria-hidden="true"></div>
+                <div class="wa-reply-composer__body">
+                    <span id="replyComposerAuthor">Responder</span>
+                    <strong id="replyComposerText"></strong>
+                </div>
+                <button type="button" class="wa-reply-composer__close" data-clear-reply aria-label="Cancelar respuesta">✕</button>
+            </div>
             <form id="messageForm" class="wa-send" enctype="multipart/form-data">
                 {% csrf_token %}
+                <input id="replyToInput" type="hidden" name="responde_a_id">
                 <div class="wa-attach-menu-wrap">
                     <button type="button" class="wa-attach" id="attachToggle" title="Adjuntar" aria-label="Adjuntar archivo">+</button>
                     <div class="wa-attach-menu" id="attachMenu">
@@ -311,6 +346,7 @@
 </div>
 
 <div id="messageActionMenu" class="wa-message-menu" hidden>
+    <button type="button" data-menu-action="reply">Responder</button>
     <button type="button" data-menu-action="edit">Editar</button>
     <button type="button" data-menu-action="save">Guardar</button>
     <button type="button" data-menu-action="delete">Eliminar</button>

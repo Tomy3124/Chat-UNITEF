@@ -46,16 +46,34 @@ def _autor_tipo_label(usuario):
     return "Departamento"
 
 
+def _autor_visible(usuario):
+    if not usuario:
+        return "Sistema"
+    if usuario.es_directiva:
+        return usuario.first_name or usuario.username
+    return usuario.departamento.nombre if usuario.departamento else usuario.username
+
+
+def _serializar_respuesta(mensaje):
+    if not mensaje:
+        return None
+
+    contenido = (mensaje.contenido or "").strip()
+    if not contenido:
+        contenido = mensaje.archivo.name.split("/")[-1] if mensaje.archivo else "Archivo adjunto"
+
+    return {
+        "id": mensaje.id,
+        "usuario": _autor_visible(mensaje.usuario),
+        "contenido": contenido[:120],
+        "archivo_nombre": mensaje.archivo.name.split("/")[-1] if mensaje.archivo else "",
+    }
+
+
 def serializar_mensaje(mensaje):
     fecha_local = timezone.localtime(mensaje.fecha)
 
-    if mensaje.usuario:
-        if mensaje.usuario.es_directiva:
-            usuario_visible = mensaje.usuario.first_name or mensaje.usuario.username
-        else:
-            usuario_visible = mensaje.usuario.departamento.nombre if mensaje.usuario.departamento else mensaje.usuario.username
-    else:
-        usuario_visible = "Sistema"
+    usuario_visible = _autor_visible(mensaje.usuario)
 
     return {
         "kind": "message",
@@ -68,8 +86,11 @@ def serializar_mensaje(mensaje):
         "autor_tipo_label": _autor_tipo_label(mensaje.usuario),
         "directiva_id": mensaje.directiva_id,
         "contenido": mensaje.contenido,
+        "responde_a": _serializar_respuesta(mensaje.responde_a),
         "fecha": fecha_local.strftime("%I:%M %p"),
         "timestamp": int(fecha_local.timestamp() * 1000),
+        "fue_visto": bool(mensaje.visto_en),
+        "visto_en": timezone.localtime(mensaje.visto_en).isoformat() if mensaje.visto_en else "",
         **_file_metadata(
             mensaje.archivo,
             reverse("chat:abrir_archivo_mensaje", args=[mensaje.id]) if mensaje.archivo else "",
@@ -77,6 +98,47 @@ def serializar_mensaje(mensaje):
         ),
         "es_sistema": mensaje.es_sistema,
     }
+
+
+def emitir_actualizacion_visto(departamento_id, message_ids, visto_en=None, directiva_id=None, viewer_id=None):
+    if not message_ids:
+        return
+
+    momento = timezone.localtime(visto_en or timezone.now())
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        f"departamento_{departamento_id}",
+        {
+            "type": "chat.read_receipt",
+            "receipt": {
+                "kind": "read_receipt",
+                "departamento_id": departamento_id,
+                "directiva_id": directiva_id,
+                "viewer_id": viewer_id,
+                "message_ids": list(message_ids),
+                "seen_at": momento.isoformat(),
+            },
+        },
+    )
+
+
+def emitir_estado_escritura(departamento_id, user_id, active, usuario, autor_tipo_label, directiva_id=None):
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        f"departamento_{departamento_id}",
+        {
+            "type": "chat.typing",
+            "typing": {
+                "kind": "typing",
+                "departamento_id": departamento_id,
+                "directiva_id": directiva_id,
+                "user_id": user_id,
+                "usuario": usuario,
+                "autor_tipo_label": autor_tipo_label,
+                "typing": bool(active),
+            },
+        },
+    )
 
 
 def serializar_aviso(aviso):

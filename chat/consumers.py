@@ -5,7 +5,7 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils import timezone
 
 from chat.models import Mensaje
-from chat.services import serializar_mensaje
+from chat.services import emitir_estado_escritura, serializar_mensaje
 from departamentos.models import Departamento
 
 
@@ -30,10 +30,16 @@ class DepartamentoChatConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
         user = self.scope.get("user")
         if user and user.is_authenticated:
+            await self._emitir_estado_escritura(False)
             await self._marcar_usuario(False)
 
     async def receive(self, text_data):
         payload = json.loads(text_data)
+        action = payload.get("action")
+        if action == "typing":
+            await self._emitir_estado_escritura(bool(payload.get("active")))
+            return
+
         contenido = payload.get("contenido", "").strip()
         if not contenido:
             return
@@ -52,6 +58,12 @@ class DepartamentoChatConsumer(AsyncWebsocketConsumer):
 
     async def chat_notice(self, event):
         await self.send(text_data=json.dumps(event["notice"]))
+
+    async def chat_typing(self, event):
+        await self.send(text_data=json.dumps(event["typing"]))
+
+    async def chat_read_receipt(self, event):
+        await self.send(text_data=json.dumps(event["receipt"]))
 
     @database_sync_to_async
     def _guardar_mensaje(self, contenido):
@@ -77,3 +89,22 @@ class DepartamentoChatConsumer(AsyncWebsocketConsumer):
         usuario.is_online = en_linea
         usuario.last_seen = timezone.now()
         usuario.save(update_fields=["is_online", "last_seen"])
+
+    @database_sync_to_async
+    def _emitir_estado_escritura(self, activa):
+        usuario = self.scope["user"]
+        if usuario.es_directiva:
+            usuario_visible = usuario.first_name or usuario.username
+            directiva_id = usuario.id
+        else:
+            usuario_visible = usuario.departamento.nombre if usuario.departamento else usuario.username
+            directiva_id = Departamento.objects.filter(pk=self.departamento_id).values_list("directiva_id", flat=True).first()
+
+        emitir_estado_escritura(
+            departamento_id=int(self.departamento_id),
+            user_id=usuario.id,
+            active=activa,
+            usuario=usuario_visible,
+            autor_tipo_label=usuario.rol_label,
+            directiva_id=directiva_id,
+        )
